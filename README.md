@@ -62,11 +62,21 @@ Add a new mode by implementing `GameModePlugin` and registering it in `service_c
 
 ## Prototype Features Included
 
+- Pre-game menu before starting
+- Single-TV mode (default) with one mouse controls
+- Per-team manual controls for `STOP`, add points, deduct points
 - Lobby creation
-- Team join via phone interface
+- Team join via phone interface (optional mode)
 - Real-time game state updates over WebSockets
 - Simple audio snippet round (placeholder media)
 - Stage-based decreasing scoring
+
+## Default Play Style
+
+The host screen now starts with a menu:
+
+- **Single TV (one mouse)**: all teams play on one screen, teams say STOP in real life, operator clicks team controls to add/deduct points.
+- **Phone Connections (optional)**: keeps the existing lobby and phone join flow.
 
 ## Run with Docker
 
