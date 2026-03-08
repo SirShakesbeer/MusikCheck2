@@ -5,7 +5,7 @@ import { RoundPanel } from '../components/RoundPanel';
 import { Scoreboard } from '../components/Scoreboard';
 import { api } from '../services/api';
 import { connectLobbySocket } from '../services/ws';
-import type { GameState } from '../types';
+import type { GameState, RoundState } from '../types';
 
 type AppMode = 'single-tv' | 'multiplayer';
 
@@ -15,11 +15,17 @@ type LocalTeam = {
   score: number;
 };
 
+const LOCAL_STAGE_DURATIONS = [2, 5, 8];
+const LOCAL_STAGE_POINTS = [100, 60, 30];
+const PLACEHOLDER_SNIPPET_URL =
+  'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=';
+
 export function HostPage() {
   const [mode, setMode] = useState<AppMode | null>(null);
   const [setupTeams, setSetupTeams] = useState('Team A, Team B');
   const [localTeams, setLocalTeams] = useState<LocalTeam[]>([]);
   const [localStarted, setLocalStarted] = useState(false);
+  const [localRound, setLocalRound] = useState<RoundState | null>(null);
   const [localMessage, setLocalMessage] = useState<string | null>(null);
 
   const [hostName, setHostName] = useState('Host');
@@ -65,8 +71,9 @@ export function HostPage() {
 
     setLocalTeams(names.map((name, index) => ({ id: `local-${index + 1}`, name, score: 0 })));
     setLocalStarted(true);
+    setLocalRound(null);
     setError(null);
-    setLocalMessage('Local game started. Teams can say STOP out loud; click the team controls.');
+    setLocalMessage('Local game started. Start a round to play snippets and score by stage points.');
   };
 
   const updateLocalScore = (teamId: string, delta: number) => {
@@ -75,8 +82,36 @@ export function HostPage() {
     );
   };
 
-  const stopForTeam = (teamName: string) => {
-    setLocalMessage(`${teamName} called STOP.`);
+  const startLocalRound = () => {
+    setLocalRound({
+      stage_index: 0,
+      stage_duration_seconds: LOCAL_STAGE_DURATIONS[0],
+      points_available: LOCAL_STAGE_POINTS[0],
+      snippet_url: PLACEHOLDER_SNIPPET_URL,
+      can_guess: false,
+      status: 'playing',
+    });
+    setLocalMessage('Round started. Use stage points for scoring.');
+  };
+
+  const nextLocalStage = () => {
+    setLocalRound((previous) => {
+      if (!previous) return previous;
+      const nextIndex = previous.stage_index + 1;
+      if (nextIndex >= LOCAL_STAGE_DURATIONS.length) {
+        setLocalMessage('Round ended - no guess.');
+        return { ...previous, status: 'finished' };
+      }
+
+      setLocalMessage(`Advanced to stage ${nextIndex + 1}.`);
+      return {
+        ...previous,
+        stage_index: nextIndex,
+        stage_duration_seconds: LOCAL_STAGE_DURATIONS[nextIndex],
+        points_available: LOCAL_STAGE_POINTS[nextIndex],
+        status: 'playing',
+      };
+    });
   };
 
   const resetToMenu = () => {
@@ -84,6 +119,7 @@ export function HostPage() {
     setState(null);
     setLocalTeams([]);
     setLocalStarted(false);
+    setLocalRound(null);
     setLocalMessage(null);
     setError(null);
   };
@@ -117,15 +153,21 @@ export function HostPage() {
       {mode === 'single-tv' && localStarted && (
         <>
           <p>Mode: Single TV</p>
+          <RoundPanel round={localRound} onStart={startLocalRound} onNextStage={nextLocalStage} />
           <Scoreboard teams={localTeams} />
           <section>
             <h3>Team Controls</h3>
             {localTeams.map((team) => (
               <p key={team.id}>
                 <strong>{team.name}</strong>{' '}
-                <button onClick={() => stopForTeam(team.name)}>STOP</button>
-                <button onClick={() => updateLocalScore(team.id, 10)}>+10</button>
-                <button onClick={() => updateLocalScore(team.id, -10)}>-10</button>
+                <button
+                  onClick={() =>
+                    updateLocalScore(team.id, localRound?.points_available ?? LOCAL_STAGE_POINTS[LOCAL_STAGE_POINTS.length - 1])
+                  }
+                >
+                  +Stage Points
+                </button>
+                <button onClick={() => updateLocalScore(team.id, -10)}>-10 Penalty</button>
               </p>
             ))}
           </section>
@@ -154,6 +196,7 @@ export function HostPage() {
             Players join at <strong>/player/{state.lobby_code}</strong>
           </p>
           <RoundPanel round={state.current_round} onStart={startRound} onNextStage={nextStage} />
+          {state.message && <p>{state.message}</p>}
           <Scoreboard teams={state.teams} />
           <h3>Players</h3>
           <ul>

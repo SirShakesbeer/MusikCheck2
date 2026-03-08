@@ -75,8 +75,8 @@ Add a new mode by implementing `GameModePlugin` and registering it in `service_c
 
 The host screen now starts with a menu:
 
-- **Single TV (one mouse)**: all teams play on one screen, teams say STOP in real life, operator clicks team controls to add/deduct points.
-- **Phone Connections (optional)**: keeps the existing lobby and phone join flow.
+- **Single TV (one mouse)**: all teams play on one screen with staged snippet rounds (start round, next stage, decreasing points). Host awards stage points or penalties with team buttons. No STOP mechanic in this mode.
+- **Phone Connections (optional)**: same round mechanics plus players can press STOP on phones; host screen shows who pressed STOP.
 
 ## Run with Docker
 
