@@ -1,5 +1,8 @@
+import time
+
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy.exc import OperationalError
 
 from app.api.routes import router
 from app.core.config import settings
@@ -20,7 +23,19 @@ app.include_router(router, prefix=settings.api_prefix)
 
 @app.on_event("startup")
 def startup() -> None:
-    Base.metadata.create_all(bind=engine)
+    max_attempts = 20
+    delay_seconds = 1.5
+    last_error: Exception | None = None
+
+    for _ in range(max_attempts):
+        try:
+            Base.metadata.create_all(bind=engine)
+            return
+        except OperationalError as error:
+            last_error = error
+            time.sleep(delay_seconds)
+
+    raise RuntimeError("Database unavailable after startup retries") from last_error
 
 
 @app.websocket("/ws/{lobby_code}")
