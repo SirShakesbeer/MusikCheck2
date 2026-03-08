@@ -1,4 +1,4 @@
-import { ChangeEvent, useEffect, useState } from 'react';
+import { ChangeEvent, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 
 import { RoundPanel } from '../components/RoundPanel';
@@ -15,22 +15,59 @@ type LocalTeam = {
   score: number;
 };
 
+type LocalSong = {
+  title: string;
+  artist: string;
+  sourceType: 'local' | 'youtube' | 'spotify';
+  sourceValue: string;
+  snippetUrl: string;
+};
+
 const LOCAL_STAGE_DURATIONS = [2, 5, 8];
 const LOCAL_STAGE_POINTS = [100, 60, 30];
 const PLACEHOLDER_SNIPPET_URL =
   'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=';
+const LOCAL_MAX_POINTS = 300;
+const LOCAL_SONGS: LocalSong[] = [
+  {
+    title: 'Never Gonna Give You Up',
+    artist: 'Rick Astley',
+    sourceType: 'local',
+    sourceValue: 'C:/Music/Party/NeverGonnaGiveYouUp.mp3',
+    snippetUrl: PLACEHOLDER_SNIPPET_URL,
+  },
+  {
+    title: 'Blinding Lights',
+    artist: 'The Weeknd',
+    sourceType: 'youtube',
+    sourceValue: 'YouTube',
+    snippetUrl: PLACEHOLDER_SNIPPET_URL,
+  },
+  {
+    title: 'Take On Me',
+    artist: 'a-ha',
+    sourceType: 'spotify',
+    sourceValue: 'Spotify',
+    snippetUrl: PLACEHOLDER_SNIPPET_URL,
+  },
+];
 
 export function HostPage() {
   const [mode, setMode] = useState<AppMode | null>(null);
   const [setupTeams, setSetupTeams] = useState('Team A, Team B');
   const [localTeams, setLocalTeams] = useState<LocalTeam[]>([]);
   const [localStarted, setLocalStarted] = useState(false);
-  const [localRound, setLocalRound] = useState<RoundState | null>(null);
+  const [localSongIndex, setLocalSongIndex] = useState<number | null>(null);
+  const [localRevealed, setLocalRevealed] = useState(false);
+  const [lastPlayedStageIndex, setLastPlayedStageIndex] = useState<number>(0);
   const [localMessage, setLocalMessage] = useState<string | null>(null);
+  const localAudioRef = useRef<HTMLAudioElement | null>(null);
 
   const [hostName, setHostName] = useState('Host');
   const [state, setState] = useState<GameState | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  const localCurrentSong = localSongIndex === null ? null : LOCAL_SONGS[localSongIndex % LOCAL_SONGS.length];
 
   useEffect(() => {
     if (!state?.lobby_code) return;
@@ -71,9 +108,11 @@ export function HostPage() {
 
     setLocalTeams(names.map((name, index) => ({ id: `local-${index + 1}`, name, score: 0 })));
     setLocalStarted(true);
-    setLocalRound(null);
+    setLocalSongIndex(null);
+    setLocalRevealed(false);
+    setLastPlayedStageIndex(0);
     setError(null);
-    setLocalMessage('Local game started. Start a round to play snippets and score by stage points.');
+    setLocalMessage('Local game started. Click Next Song to begin a round.');
   };
 
   const updateLocalScore = (teamId: string, delta: number) => {
@@ -82,36 +121,54 @@ export function HostPage() {
     );
   };
 
-  const startLocalRound = () => {
-    setLocalRound({
-      stage_index: 0,
-      stage_duration_seconds: LOCAL_STAGE_DURATIONS[0],
-      points_available: LOCAL_STAGE_POINTS[0],
-      snippet_url: PLACEHOLDER_SNIPPET_URL,
-      can_guess: false,
-      status: 'playing',
-    });
-    setLocalMessage('Round started. Use stage points for scoring.');
+  const playLocalSnippet = (stageIndex: number) => {
+    if (!localCurrentSong) {
+      setLocalMessage('Click Next Song first.');
+      return;
+    }
+
+    const audio = localAudioRef.current ?? new Audio(localCurrentSong.snippetUrl);
+    localAudioRef.current = audio;
+    audio.src = localCurrentSong.snippetUrl;
+    audio.pause();
+    audio.currentTime = 0;
+    void audio.play();
+
+    window.setTimeout(() => {
+      audio.pause();
+      audio.currentTime = 0;
+    }, LOCAL_STAGE_DURATIONS[stageIndex] * 1000);
+
+    setLastPlayedStageIndex(stageIndex);
+    setLocalMessage(`Playing snippet ${stageIndex + 1} (${LOCAL_STAGE_DURATIONS[stageIndex]}s).`);
   };
 
-  const nextLocalStage = () => {
-    setLocalRound((previous) => {
-      if (!previous) return previous;
-      const nextIndex = previous.stage_index + 1;
-      if (nextIndex >= LOCAL_STAGE_DURATIONS.length) {
-        setLocalMessage('Round ended - no guess.');
-        return { ...previous, status: 'finished' };
-      }
+  const revealLocalSong = () => {
+    if (!localCurrentSong) {
+      setLocalMessage('No active song to reveal.');
+      return;
+    }
+    setLocalRevealed(true);
+  };
 
-      setLocalMessage(`Advanced to stage ${nextIndex + 1}.`);
-      return {
-        ...previous,
-        stage_index: nextIndex,
-        stage_duration_seconds: LOCAL_STAGE_DURATIONS[nextIndex],
-        points_available: LOCAL_STAGE_POINTS[nextIndex],
-        status: 'playing',
-      };
+  const nextLocalSong = () => {
+    setLocalSongIndex((previous) => {
+      if (previous === null) return 0;
+      return (previous + 1) % LOCAL_SONGS.length;
     });
+    setLocalRevealed(false);
+    setLastPlayedStageIndex(0);
+    setLocalMessage('New song round started.');
+  };
+
+  const getSourceInfo = (song: LocalSong) => {
+    if (song.sourceType === 'local') {
+      return `Local file: ${song.sourceValue}`;
+    }
+    if (song.sourceType === 'youtube') {
+      return 'YouTube';
+    }
+    return 'Spotify';
   };
 
   const resetToMenu = () => {
@@ -119,10 +176,32 @@ export function HostPage() {
     setState(null);
     setLocalTeams([]);
     setLocalStarted(false);
-    setLocalRound(null);
+    setLocalSongIndex(null);
+    setLocalRevealed(false);
+    setLastPlayedStageIndex(0);
     setLocalMessage(null);
     setError(null);
   };
+
+  useEffect(() => {
+    return () => {
+      const audio = localAudioRef.current;
+      if (audio) {
+        audio.pause();
+      }
+    };
+  }, []);
+
+  const localRoundForPanel: RoundState | null = localCurrentSong
+    ? {
+        stage_index: lastPlayedStageIndex,
+        stage_duration_seconds: LOCAL_STAGE_DURATIONS[lastPlayedStageIndex],
+        points_available: LOCAL_STAGE_POINTS[lastPlayedStageIndex],
+        snippet_url: localCurrentSong.snippetUrl,
+        can_guess: false,
+        status: 'playing',
+      }
+    : null;
 
   return (
     <main>
@@ -151,29 +230,75 @@ export function HostPage() {
       )}
 
       {mode === 'single-tv' && localStarted && (
-        <>
+        <section className="single-tv-screen">
           <p>Mode: Single TV</p>
-          <RoundPanel round={localRound} onStart={startLocalRound} onNextStage={nextLocalStage} />
+
+          <div className="top-controls">
+            <button onClick={() => playLocalSnippet(0)} disabled={!localCurrentSong}>
+              Snippet 1
+            </button>
+            <button onClick={() => playLocalSnippet(1)} disabled={!localCurrentSong}>
+              Snippet 2
+            </button>
+            <button onClick={() => playLocalSnippet(2)} disabled={!localCurrentSong}>
+              Snippet 3
+            </button>
+            <div className="spacer" />
+            <button onClick={revealLocalSong} disabled={!localCurrentSong}>
+              Reveal
+            </button>
+            <button onClick={nextLocalSong}>Next Song</button>
+          </div>
+
+          {localRevealed && localCurrentSong && (
+            <p>
+              {localCurrentSong.artist} — {localCurrentSong.title} • {getSourceInfo(localCurrentSong)}
+            </p>
+          )}
+
+          {localCurrentSong && (
+            <p>
+              Active stage points: {localRoundForPanel?.points_available ?? LOCAL_STAGE_POINTS[0]} (last snippet:{' '}
+              {lastPlayedStageIndex + 1})
+            </p>
+          )}
+
           <Scoreboard teams={localTeams} />
           <section>
-            <h3>Team Controls</h3>
+            <h3>Teams</h3>
             {localTeams.map((team) => (
-              <p key={team.id}>
-                <strong>{team.name}</strong>{' '}
-                <button
-                  onClick={() =>
-                    updateLocalScore(team.id, localRound?.points_available ?? LOCAL_STAGE_POINTS[LOCAL_STAGE_POINTS.length - 1])
-                  }
-                >
-                  +Stage Points
-                </button>
-                <button onClick={() => updateLocalScore(team.id, -10)}>-10 Penalty</button>
-              </p>
+              <div key={team.id} className="team-row">
+                <div className="team-label">{team.name}</div>
+                <div className="team-lane">
+                  <div
+                    className="team-box"
+                    style={{ left: `${Math.max(0, Math.min(1, team.score / LOCAL_MAX_POINTS)) * 90}%` }}
+                  >
+                    {team.score}
+                  </div>
+                </div>
+                <div className="team-actions">
+                  <button
+                    onClick={() =>
+                      updateLocalScore(team.id, localRoundForPanel?.points_available ?? LOCAL_STAGE_POINTS[lastPlayedStageIndex])
+                    }
+                    disabled={!localCurrentSong}
+                  >
+                    +Stage Points
+                  </button>
+                  <button onClick={() => updateLocalScore(team.id, -10)}>-10</button>
+                </div>
+              </div>
             ))}
           </section>
           {localMessage && <p>{localMessage}</p>}
-          <button onClick={resetToMenu}>End Game / Menu</button>
-        </>
+
+          <div className="bottom-row">
+            <button className="quit-button" onClick={resetToMenu}>
+              Quit
+            </button>
+          </div>
+        </section>
       )}
 
       {mode === 'multiplayer' && !state && (

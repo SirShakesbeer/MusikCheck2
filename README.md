@@ -107,8 +107,12 @@ npm run dev
 
 ## Next Extension Targets
 
+### gameplay
+
 - Replace placeholder snippet generation with ffmpeg audio/video/frames extraction
 - Add additional mode plugins (`music_video`, `lyrics`, `instrumental`)
 - Persist rounds/songs/history tables
 - Add authentication and host permissions
 - Add provider-specific ingestion workers
+
+### UI

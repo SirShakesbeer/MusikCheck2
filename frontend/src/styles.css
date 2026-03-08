@@ -29,3 +29,62 @@ input {
 button {
   margin-right: 0.5rem;
 }
+
+.single-tv-screen {
+  min-height: 70vh;
+}
+
+.top-controls {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  margin-bottom: 0.75rem;
+}
+
+.top-controls .spacer {
+  flex: 1;
+}
+
+.team-row {
+  display: grid;
+  grid-template-columns: 120px 1fr auto;
+  gap: 0.75rem;
+  align-items: center;
+  margin-bottom: 0.75rem;
+}
+
+.team-label {
+  font-weight: 700;
+}
+
+.team-lane {
+  position: relative;
+  height: 42px;
+  border: 1px solid #d1d5db;
+  border-radius: 999px;
+  background: #f9fafb;
+}
+
+.team-box {
+  position: absolute;
+  top: 3px;
+  width: 72px;
+  height: 34px;
+  border-radius: 999px;
+  background: #2563eb;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+}
+
+.bottom-row {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 1.5rem;
+}
+
+.quit-button {
+  min-width: 96px;
+}
