@@ -33,6 +33,7 @@ type LocalSong = {
   sourceType: 'local' | 'youtube' | 'spotify';
   sourceValue: string;
   snippetUrl: string;
+  durationSeconds?: number;
 };
 
 const LOCAL_STAGE_DURATIONS = [2, 5, 8];
@@ -83,6 +84,7 @@ export function HostPage() {
   const [localTeams, setLocalTeams] = useState<LocalTeam[]>([]);
   const [localSongs, setLocalSongs] = useState<LocalSong[]>(MOCK_LOCAL_SONGS);
   const [localStarted, setLocalStarted] = useState(false);
+  const [snippetStartOffsets, setSnippetStartOffsets] = useState<number[]>([0, 0, 0]);
   const [localSongIndex, setLocalSongIndex] = useState<number | null>(null);
   const [localRevealed, setLocalRevealed] = useState(false);
   const [lastPlayedStageIndex, setLastPlayedStageIndex] = useState<number>(0);
@@ -94,12 +96,15 @@ export function HostPage() {
   const [runtimeTestMode, setRuntimeTestMode] = useState<boolean>(true);
   const [youtubeApiConfigured, setYoutubeApiConfigured] = useState<boolean>(false);
   const [runtimeConfigBusy, setRuntimeConfigBusy] = useState<boolean>(false);
+  const [playerPopup, setPlayerPopup] = useState<Window | null>(null);
 
   const providerKeyByType: Record<SourceType, string> = {
     'youtube-playlist': 'youtube_playlist',
     'spotify-playlist': 'spotify_playlist',
     'local-folder': 'local_files',
   };
+
+  const apiBase = import.meta.env.VITE_API_BASE ?? 'http://localhost:8000/api';
 
   const localCurrentSong = localSongIndex === null ? null : localSongs[localSongIndex % localSongs.length];
   const localCurrentSource =
@@ -172,7 +177,8 @@ export function HostPage() {
                 ? 'spotify'
                 : 'local',
           sourceValue: track.source_value,
-          snippetUrl: PLACEHOLDER_SNIPPET_URL,
+          snippetUrl: track.playback_url.startsWith('http') ? track.playback_url : `${apiBase}${track.playback_url}`,
+          durationSeconds: typeof track.duration_seconds === 'number' ? track.duration_seconds : undefined,
         }));
 
         if (dynamicSongs.length < 1) {
@@ -312,13 +318,18 @@ export function HostPage() {
       return;
     }
 
+    const startAtSeconds = snippetStartOffsets[stageIndex] ?? 0;
+
     await snippetPlayer.play({
       snippetUrl: localCurrentSong.snippetUrl,
       durationSeconds: LOCAL_STAGE_DURATIONS[stageIndex],
+      startAtSeconds,
     });
 
     setLastPlayedStageIndex(stageIndex);
-    setLocalMessage(`Playing snippet ${stageIndex + 1} (${LOCAL_STAGE_DURATIONS[stageIndex]}s).`);
+    setLocalMessage(
+      `Playing snippet ${stageIndex + 1} (${LOCAL_STAGE_DURATIONS[stageIndex]}s) from ${Math.floor(startAtSeconds)}s.`,
+    );
   };
 
   const revealLocalSong = () => {
@@ -335,13 +346,62 @@ export function HostPage() {
       return;
     }
 
-    setLocalSongIndex((previous) => {
-      if (previous === null) return 0;
-      return (previous + 1) % localSongs.length;
+    const begin = async () => {
+      const nextIndex = localSongIndex === null ? 0 : (localSongIndex + 1) % localSongs.length;
+      const nextSong = localSongs[nextIndex];
+      const songDuration = await resolveSongDuration(nextSong);
+      const starts = LOCAL_STAGE_DURATIONS.map((stageDuration) => {
+        const maxStart = Math.max(0, songDuration - stageDuration);
+        if (maxStart <= 0) {
+          return 0;
+        }
+        return Math.floor(Math.random() * (maxStart + 1));
+      });
+
+      setSnippetStartOffsets(starts);
+      setLocalSongIndex(nextIndex);
+      setLocalRevealed(false);
+      setLastPlayedStageIndex(0);
+      setLocalMessage('New song round started.');
+    };
+
+    void begin().catch((err) => {
+      setError(err instanceof Error ? err.message : String(err));
     });
-    setLocalRevealed(false);
-    setLastPlayedStageIndex(0);
-    setLocalMessage('New song round started.');
+  };
+
+  const resolveSongDuration = async (song: LocalSong): Promise<number> => {
+    if (song.durationSeconds && song.durationSeconds > 0) {
+      return Math.floor(song.durationSeconds);
+    }
+
+    if (song.sourceType === 'youtube') {
+      return 120;
+    }
+
+    const audio = new Audio();
+    audio.preload = 'metadata';
+    audio.src = song.snippetUrl;
+
+    const duration = await new Promise<number>((resolve) => {
+      const cleanup = () => {
+        audio.onloadedmetadata = null;
+        audio.onerror = null;
+      };
+
+      audio.onloadedmetadata = () => {
+        const value = Number.isFinite(audio.duration) ? audio.duration : 0;
+        cleanup();
+        resolve(Math.max(0, Math.floor(value)));
+      };
+
+      audio.onerror = () => {
+        cleanup();
+        resolve(0);
+      };
+    });
+
+    return duration;
   };
 
   const getSourceInfo = (song: LocalSong, source: LocalSource | null) => {
@@ -390,11 +450,50 @@ export function HostPage() {
     }
   };
 
+  const getYoutubeWatchUrl = (embedUrl: string): string =>
+    embedUrl.replace('/embed/', '/watch?v=').replace('?autoplay=1', '').replace('&autoplay=1', '');
+
+  const openPlayerPopup = () => {
+    if (!localCurrentSong) {
+      return;
+    }
+
+    const popup = window.open('', 'musikcheck-player', 'width=520,height=340,resizable=yes');
+    if (!popup) {
+      setError('Popup was blocked by the browser. Please allow popups for this site.');
+      return;
+    }
+
+    const title = `${localCurrentSong.artist} — ${localCurrentSong.title}`;
+    const body =
+      localCurrentSong.sourceType === 'youtube'
+        ? `<iframe width="100%" height="220" src="${localCurrentSong.snippetUrl.replace('autoplay=1', 'autoplay=0')}" title="Revealed song player" allow="autoplay; encrypted-media" allowfullscreen></iframe>`
+        : `<audio controls autoplay src="${localCurrentSong.snippetUrl}" style="width:100%"></audio>`;
+    const extra =
+      localCurrentSong.sourceType === 'youtube'
+        ? `<p style="margin-top:8px;"><a href="${getYoutubeWatchUrl(localCurrentSong.snippetUrl)}" target="_blank" rel="noreferrer">Open on YouTube</a></p>`
+        : '';
+
+    popup.document.title = `MusikCheck Player`;
+    popup.document.body.innerHTML = `
+      <main style="font-family: Arial, sans-serif; padding: 12px; background: #fff;">
+        <h3 style="margin-top: 0;">${title}</h3>
+        ${body}
+        ${extra}
+      </main>
+    `;
+    popup.focus();
+    setPlayerPopup(popup);
+  };
+
   useEffect(() => {
     return () => {
       snippetPlayer.dispose();
+      if (playerPopup && !playerPopup.closed) {
+        playerPopup.close();
+      }
     };
-  }, [snippetPlayer]);
+  }, [snippetPlayer, playerPopup]);
 
   useEffect(() => {
     if (!folderInputRef.current) return;
@@ -544,9 +643,24 @@ export function HostPage() {
           </div>
 
           {localRevealed && localCurrentSong && (
-            <p>
-              {localCurrentSong.artist} — {localCurrentSong.title} • {getSourceInfo(localCurrentSong, localCurrentSource)}
-            </p>
+            <>
+              <p>
+                {localCurrentSong.artist} — {localCurrentSong.title} • {getSourceInfo(localCurrentSong, localCurrentSource)}
+              </p>
+              <p>
+                <button onClick={openPlayerPopup}>Pop out player</button>
+              </p>
+              {localCurrentSong.sourceType !== 'youtube' ? (
+                <audio controls src={localCurrentSong.snippetUrl} style={{ width: '100%', maxWidth: 560 }} />
+              ) : (
+                <p>
+                  Audio-only full-song playback for YouTube is not available in-browser with playlist metadata links.
+                  <a href={getYoutubeWatchUrl(localCurrentSong.snippetUrl)} target="_blank" rel="noreferrer" style={{ marginLeft: 8 }}>
+                    Open on YouTube
+                  </a>
+                </p>
+              )}
+            </>
           )}
 
           {localCurrentSong && (

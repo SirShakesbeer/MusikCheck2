@@ -63,6 +63,8 @@ class IndexedTrackState(BaseModel):
     file_path: str
     title: str
     artist: str
+    playback_url: str
+    duration_seconds: int | None = None
 
 
 class ListIndexedTracksResponse(BaseModel):

@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -162,6 +163,18 @@ def list_media_sources(db: Session = Depends(get_db)):
 def list_indexed_tracks(source_ids: str | None = None, limit: int = 500, db: Session = Depends(get_db)):
     parsed_source_ids = [value.strip() for value in (source_ids or "").split(",") if value.strip()]
     rows = media_library_service.list_indexed_tracks(db, parsed_source_ids or None, limit=max(1, min(limit, 1000)))
+
+    youtube_rows = [(track, source) for track, source in rows if source.provider_key == "youtube_playlist"]
+    youtube_video_ids = [track.file_path for track, _ in youtube_rows]
+    youtube_durations: dict[str, int] = {}
+    if youtube_video_ids:
+        provider = media_ingestion_service.get_provider("youtube_playlist")
+        if provider and hasattr(provider, "fetch_video_durations"):
+            try:
+                youtube_durations = provider.fetch_video_durations(youtube_video_ids)
+            except ValueError:
+                youtube_durations = {}
+
     tracks = [
         IndexedTrackState(
             id=track.id,
@@ -171,11 +184,32 @@ def list_indexed_tracks(source_ids: str | None = None, limit: int = 500, db: Ses
             file_path=track.file_path,
             title=track.title,
             artist=track.artist,
+            playback_url=(
+                f"/api/media/tracks/{track.id}/stream"
+                if source.provider_key in {"local_folder", "local_files"}
+                else f"https://www.youtube.com/embed/{track.file_path}?autoplay=1"
+                if source.provider_key == "youtube_playlist"
+                else ""
+            ),
+            duration_seconds=(youtube_durations.get(track.file_path) if source.provider_key == "youtube_playlist" else None),
         )
         for track, source in rows
     ]
     data = ListIndexedTracksResponse(tracks=tracks)
     return {"ok": True, "data": data.model_dump()}
+
+
+@router.get("/media/tracks/{track_id}/stream")
+def stream_indexed_track(track_id: str, db: Session = Depends(get_db)):
+    row = media_library_service.get_indexed_track(db, track_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Track not found")
+
+    track, source = row
+    if source.provider_key not in {"local_folder", "local_files"}:
+        raise HTTPException(status_code=400, detail="Streaming currently supported only for local tracks")
+
+    return FileResponse(path=track.file_path)
 
 
 @router.post("/lobbies", response_model=ApiEnvelope)

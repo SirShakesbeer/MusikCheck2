@@ -13,6 +13,9 @@ class MediaIngestionService:
             raise ValueError(f"Unknown provider: {provider_key}")
         return provider.fetch_items(source)
 
+    def get_provider(self, provider_key: str) -> MediaProvider | None:
+        return self._providers.get(provider_key)
+
     @property
     def providers(self) -> list[str]:
         return list(self._providers.keys())

@@ -101,6 +101,8 @@ export type IndexedTrackState = {
   file_path: string;
   title: string;
   artist: string;
+  playback_url: string;
+  duration_seconds?: number | null;
 };
 
 export type IndexedTracksEnvelope = {

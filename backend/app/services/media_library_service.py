@@ -93,6 +93,15 @@ class MediaLibraryService:
 
         return query.order_by(IndexedTrack.updated_at.desc()).limit(limit).all()
 
+    def get_indexed_track(self, db: Session, track_id: str) -> tuple[IndexedTrack, MediaSource] | None:
+        row = (
+            db.query(IndexedTrack, MediaSource)
+            .join(MediaSource, IndexedTrack.source_id == MediaSource.id)
+            .filter(IndexedTrack.id == track_id)
+            .first()
+        )
+        return row
+
     def sync_remote_source(self, db: Session, source_id: str, items: list[MediaItem]) -> int:
         source = db.query(MediaSource).filter(MediaSource.id == source_id).first()
         if not source:
