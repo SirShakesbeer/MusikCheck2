@@ -7,6 +7,8 @@ type Props = {
 };
 
 export function RoundPanel({ round, onStart, onNextStage }: Props) {
+  const isYouTubeSnippet = Boolean(round?.snippet_url?.includes('youtube.com/embed/'));
+
   return (
     <section>
       <h3>Round</h3>
@@ -17,7 +19,18 @@ export function RoundPanel({ round, onStart, onNextStage }: Props) {
             Stage {round.stage_index + 1} • Duration {round.stage_duration_seconds}s • Points {round.points_available}
           </p>
           <p>Status: {round.status}</p>
-          <audio controls src={round.snippet_url} />
+          {isYouTubeSnippet ? (
+            <iframe
+              width="420"
+              height="236"
+              src={round.snippet_url}
+              title="YouTube snippet"
+              allow="autoplay; encrypted-media"
+              allowFullScreen
+            />
+          ) : (
+            <audio controls src={round.snippet_url} />
+          )}
           <div>
             <button onClick={onNextStage} disabled={round.status === 'finished'}>
               Next Stage

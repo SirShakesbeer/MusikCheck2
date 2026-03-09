@@ -42,3 +42,31 @@ class Player(Base):
 
     lobby: Mapped[Lobby] = relationship(back_populates="players")
     team: Mapped["Team"] = relationship(back_populates="players")
+
+
+class MediaSource(Base):
+    __tablename__ = "media_sources"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    provider_key: Mapped[str] = mapped_column(String(64), index=True)
+    source_value: Mapped[str] = mapped_column(String(1024), unique=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    tracks: Mapped[list["IndexedTrack"]] = relationship(back_populates="source", cascade="all, delete-orphan")
+
+
+class IndexedTrack(Base):
+    __tablename__ = "indexed_tracks"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    source_id: Mapped[str] = mapped_column(String(36), ForeignKey("media_sources.id"), index=True)
+    file_path: Mapped[str] = mapped_column(String(2048), unique=True)
+    title: Mapped[str] = mapped_column(String(256))
+    artist: Mapped[str] = mapped_column(String(256), default="Unknown Artist")
+    file_mtime: Mapped[int] = mapped_column(Integer)
+    file_size: Mapped[int] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    source: Mapped[MediaSource] = relationship(back_populates="tracks")

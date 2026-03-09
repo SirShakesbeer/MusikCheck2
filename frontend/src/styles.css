@@ -30,6 +30,23 @@ button {
   margin-right: 0.5rem;
 }
 
+.source-list {
+  margin: 0.5rem 0;
+}
+
+.source-row,
+.source-add-block {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+
+.source-row input,
+.source-add-block input {
+  min-width: 320px;
+}
+
 .single-tv-screen {
   min-height: 70vh;
 }

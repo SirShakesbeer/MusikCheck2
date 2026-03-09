@@ -55,3 +55,12 @@ class GameState(BaseModel):
 class ApiEnvelope(BaseModel):
     ok: bool = True
     data: GameState
+
+
+class RuntimeConfigState(BaseModel):
+    test_mode: bool
+    youtube_api_key_configured: bool
+
+
+class RuntimeConfigUpdateRequest(BaseModel):
+    test_mode: bool

@@ -1,13 +1,22 @@
+from pathlib import Path
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+BACKEND_ROOT = Path(__file__).resolve().parents[2]
+ENV_FILE = BACKEND_ROOT / ".env"
 
 
 class Settings(BaseSettings):
     app_name: str = "MusikCheck2 API"
     api_prefix: str = "/api"
-    database_url: str = "postgresql+psycopg://musikcheck:musikcheck@db:5432/musikcheck"
+    database_url: str = "sqlite:///./dev.db"
     media_root: str = "media"
+    test_mode: bool = True
+    youtube_api_key: str | None = None
+    youtube_default_playlist: str | None = None
 
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+    model_config = SettingsConfigDict(env_file=str(ENV_FILE), env_file_encoding="utf-8", extra="ignore")
 
 
 settings = Settings()

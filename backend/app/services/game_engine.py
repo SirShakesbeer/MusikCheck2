@@ -4,9 +4,11 @@ from dataclasses import dataclass
 
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
+from app.domain.models import IndexedTrack, Lobby, MediaSource, Player, Team
 from app.domain.providers.base import MediaItem
-from app.domain.models import Lobby, Player, Team
 from app.schemas.game import GameState, PlayerState, RoundState, TeamState
+from app.services.media_ingestion_service import MediaIngestionService
 from app.services.game_mode_registry import GameModeRegistry
 from app.services.media_processing_service import MediaProcessingService
 
@@ -21,9 +23,15 @@ class RuntimeRound:
 
 
 class GameEngine:
-    def __init__(self, mode_registry: GameModeRegistry, media_processing: MediaProcessingService):
+    def __init__(
+        self,
+        mode_registry: GameModeRegistry,
+        media_processing: MediaProcessingService,
+        media_ingestion: MediaIngestionService,
+    ):
         self.mode_registry = mode_registry
         self.media_processing = media_processing
+        self.media_ingestion = media_ingestion
         self._runtime_rounds: dict[str, RuntimeRound] = {}
 
     def _generate_code(self, db: Session) -> str:
@@ -61,12 +69,7 @@ class GameEngine:
     def start_round(self, db: Session, lobby_code: str) -> None:
         lobby = self._find_lobby(db, lobby_code)
         mode = self.mode_registry.get(lobby.mode_key)
-        media_item = MediaItem(
-            source_id="placeholder-1",
-            title="Never Gonna Give You Up",
-            artist="Rick Astley",
-            media_path="placeholder",
-        )
+        media_item = self._pick_round_media_item(db)
         snippet_spec = mode.snippet_for_stage(media_item, 0)
         processed = self.media_processing.build_snippet(media_item, snippet_spec)
         self._runtime_rounds[lobby.code] = RuntimeRound(
@@ -76,6 +79,37 @@ class GameEngine:
             status="playing",
             snippet_url=processed.snippet_url,
         )
+
+    def _pick_round_media_item(self, db: Session) -> MediaItem:
+        if settings.test_mode:
+            return MediaItem(
+                source_id="placeholder-1",
+                title="Never Gonna Give You Up",
+                artist="Rick Astley",
+                media_path="placeholder",
+            )
+
+        indexed_tracks = db.query(IndexedTrack).all()
+        if indexed_tracks:
+            indexed_track = random.choice(indexed_tracks)
+            source = db.query(MediaSource).filter(MediaSource.id == indexed_track.source_id).first()
+            media_path = indexed_track.file_path
+            if source and source.provider_key == "youtube_playlist":
+                media_path = f"https://www.youtube.com/watch?v={indexed_track.file_path}"
+
+            return MediaItem(
+                source_id=indexed_track.id,
+                title=indexed_track.title,
+                artist=indexed_track.artist,
+                media_path=media_path,
+            )
+
+        if settings.youtube_default_playlist:
+            items = self.media_ingestion.import_from_source("youtube_playlist", settings.youtube_default_playlist)
+            if items:
+                return random.choice(items)
+
+        raise ValueError("No media available. Add/index a source or enable TEST_MODE.")
 
     def stop_round(self, db: Session, lobby_code: str, team_id: str) -> None:
         self._find_lobby(db, lobby_code)
