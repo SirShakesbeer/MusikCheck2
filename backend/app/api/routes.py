@@ -72,6 +72,9 @@ def list_game_modes() -> dict:
             name=preset.name,
             stage_durations=preset.stage_durations,
             stage_points=preset.stage_points,
+            bonus_points_both=preset.bonus_points_both,
+            wrong_guess_penalty=preset.wrong_guess_penalty,
+            required_points_to_win=preset.required_points_to_win,
             round_rules=[
                 RoundTypeRuleState(kind=rule.kind, every_n_songs=rule.every_n_songs)
                 for rule in preset.round_rules
@@ -111,6 +114,9 @@ def create_game_mode(payload: CreateGameModePresetRequest) -> dict:
                 RoundTypeRule(kind=rule.kind, every_n_songs=rule.every_n_songs)
                 for rule in payload.config.round_rules
             ],
+            bonus_points_both=payload.config.bonus_points_both,
+            wrong_guess_penalty=payload.config.wrong_guess_penalty,
+            required_points_to_win=payload.config.required_points_to_win,
             filters=payload.config.filters.model_dump(),
         )
         saved = game_mode_service.save_preset(preset)
@@ -120,6 +126,9 @@ def create_game_mode(payload: CreateGameModePresetRequest) -> dict:
                 name=saved.name,
                 stage_durations=saved.stage_durations,
                 stage_points=saved.stage_points,
+                bonus_points_both=saved.bonus_points_both,
+                wrong_guess_penalty=saved.wrong_guess_penalty,
+                required_points_to_win=saved.required_points_to_win,
                 round_rules=[
                     RoundTypeRuleState(kind=rule.kind, every_n_songs=rule.every_n_songs)
                     for rule in saved.round_rules
@@ -417,6 +426,9 @@ async def create_lobby(payload: CreateLobbyRequest, db: Session = Depends(get_db
                     RoundTypeRule(kind=rule.kind, every_n_songs=rule.every_n_songs)
                     for rule in payload.mode_config.round_rules
                 ],
+                bonus_points_both=payload.mode_config.bonus_points_both,
+                wrong_guess_penalty=payload.mode_config.wrong_guess_penalty,
+                required_points_to_win=payload.mode_config.required_points_to_win,
                 filters=payload.mode_config.filters.model_dump(),
             )
             if payload.save_as_preset:

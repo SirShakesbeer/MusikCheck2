@@ -182,16 +182,13 @@ npm run dev
 
 ### gameplay
 
-- Add additional mode plugins (`music_video`, `lyrics`, `instrumental`) (ffmpeg audio/video/frames extraction)
-- Persist rounds/songs/history tables
+- Add additional mode plugins (`music_video`, `lyrics`, `instrumental`, `speed round`, `STRÄWKCÜR`) (ffmpeg audio/video/frames extraction)
+- fix randomization, ensure cross source randomization
+- Persist rounds/songs/history-tables (consistent with MusikCheck)
 - persist game status on reload (use states)
-- Add authentication and host permissions
-- Add provider-specific ingestion workers
-- make gamemode modular and create presets (which modes are included + frequency)
-- add a local database ingestion tool that can be connected in the ui
-- create persistance of user info (settings, user created gamemodes, highscores, connected local databases)
-- fix point system
-- add 
+- create persistance of user info (settings, user created gamemodes, highscores, connected local databases) (highscores consistent with MusikCheck)
+- add a local database ingestion tool that can be connected in the ui (consistent with MusikCheck)
+- adjust point system to be more similar to MusikCheck (penalty points, lock artist/title guess points)
 
 ### UI
 

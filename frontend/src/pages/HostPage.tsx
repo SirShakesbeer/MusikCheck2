@@ -35,11 +35,19 @@ type LocalSong = {
   spotifyTrackId?: string;
 };
 
-const LOCAL_STAGE_DURATIONS = [2, 5, 8];
-const LOCAL_STAGE_POINTS = [100, 60, 30];
+type TeamRoundGuessState = {
+  artistPoints: number;
+  titlePoints: number;
+  bonusPoints: number;
+};
+
+const LOCAL_STAGE_DURATIONS_DEFAULT = [2, 5, 8];
+const LOCAL_STAGE_POINTS = [3, 2, 1];
 const PLACEHOLDER_SNIPPET_URL =
   'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=';
-const LOCAL_MAX_POINTS = 300;
+const LOCAL_BOTH_BONUS_POINTS = 1;
+const LOCAL_WRONG_GUESS_PENALTY = 1;
+const LOCAL_REQUIRED_POINTS_TO_WIN = 15;
 const MOCK_LOCAL_SONGS: LocalSong[] = [
   {
     title: 'Never Gonna Give You Up',
@@ -91,6 +99,8 @@ export function HostPage() {
   const [localSongIndex, setLocalSongIndex] = useState<number | null>(null);
   const [localRevealed, setLocalRevealed] = useState(false);
   const [lastPlayedStageIndex, setLastPlayedStageIndex] = useState<number>(0);
+  const [highestPlayedStageIndex, setHighestPlayedStageIndex] = useState<number>(0);
+  const [teamRoundGuessState, setTeamRoundGuessState] = useState<Record<string, TeamRoundGuessState>>({});
   const [localMessage, setLocalMessage] = useState<string | null>(null);
 
   const [hostName, setHostName] = useState('Host');
@@ -105,6 +115,15 @@ export function HostPage() {
   const [releaseYearFrom, setReleaseYearFrom] = useState<string>('');
   const [releaseYearTo, setReleaseYearTo] = useState<string>('');
   const [language, setLanguage] = useState<string>('');
+  const [snippet1Duration, setSnippet1Duration] = useState<string>(String(LOCAL_STAGE_DURATIONS_DEFAULT[0]));
+  const [snippet2Duration, setSnippet2Duration] = useState<string>(String(LOCAL_STAGE_DURATIONS_DEFAULT[1]));
+  const [snippet3Duration, setSnippet3Duration] = useState<string>(String(LOCAL_STAGE_DURATIONS_DEFAULT[2]));
+  const [snippet1Points, setSnippet1Points] = useState<string>(String(LOCAL_STAGE_POINTS[0]));
+  const [snippet2Points, setSnippet2Points] = useState<string>(String(LOCAL_STAGE_POINTS[1]));
+  const [snippet3Points, setSnippet3Points] = useState<string>(String(LOCAL_STAGE_POINTS[2]));
+  const [bothBonusPoints, setBothBonusPoints] = useState<string>(String(LOCAL_BOTH_BONUS_POINTS));
+  const [wrongGuessPenalty, setWrongGuessPenalty] = useState<string>(String(LOCAL_WRONG_GUESS_PENALTY));
+  const [requiredPointsToWin, setRequiredPointsToWin] = useState<string>(String(LOCAL_REQUIRED_POINTS_TO_WIN));
   const [saveAsPreset, setSaveAsPreset] = useState<boolean>(false);
   const [newPresetName, setNewPresetName] = useState<string>('');
   const [state, setState] = useState<GameState | null>(null);
@@ -162,6 +181,15 @@ export function HostPage() {
     );
     setReleaseYearTo(typeof preset.filters.release_year_to === 'number' ? String(preset.filters.release_year_to) : '');
     setLanguage(preset.filters.language ?? '');
+    setSnippet1Duration(String(preset.stage_durations[0] ?? LOCAL_STAGE_DURATIONS_DEFAULT[0]));
+    setSnippet2Duration(String(preset.stage_durations[1] ?? LOCAL_STAGE_DURATIONS_DEFAULT[1]));
+    setSnippet3Duration(String(preset.stage_durations[2] ?? LOCAL_STAGE_DURATIONS_DEFAULT[2]));
+    setSnippet1Points(String(preset.stage_points[0] ?? LOCAL_STAGE_POINTS[0]));
+    setSnippet2Points(String(preset.stage_points[1] ?? LOCAL_STAGE_POINTS[1]));
+    setSnippet3Points(String(preset.stage_points[2] ?? LOCAL_STAGE_POINTS[2]));
+    setBothBonusPoints(String(preset.bonus_points_both ?? LOCAL_BOTH_BONUS_POINTS));
+    setWrongGuessPenalty(String(preset.wrong_guess_penalty ?? LOCAL_WRONG_GUESS_PENALTY));
+    setRequiredPointsToWin(String(preset.required_points_to_win ?? LOCAL_REQUIRED_POINTS_TO_WIN));
   };
 
   const activeRoundTypes = [
@@ -173,9 +201,18 @@ export function HostPage() {
   const requiredPhoneRoundTypes = activeRoundTypes.filter((roundType) => ROUND_TYPES_REQUIRING_PHONES.has(roundType));
   const modeRequiresPhoneConnections = requiredPhoneRoundTypes.length > 0;
 
+  const getConfiguredStageDurations = (): number[] => {
+    const values = [snippet1Duration, snippet2Duration, snippet3Duration].map((value) => Number.parseInt(value, 10));
+    return values.map((value, index) =>
+      Number.isFinite(value) && value > 0 ? value : LOCAL_STAGE_DURATIONS_DEFAULT[index],
+    );
+  };
+
   const buildModeConfig = (): GameModeConfig => {
-    const stageDurations = [...LOCAL_STAGE_DURATIONS];
-    const stagePoints = [...LOCAL_STAGE_POINTS];
+    const stageDurations = [snippet1Duration, snippet2Duration, snippet3Duration].map((value) =>
+      Number.parseInt(value, 10),
+    );
+    const stagePoints = [snippet1Points, snippet2Points, snippet3Points].map((value) => Number.parseInt(value, 10));
     const rules: { kind: string; every_n_songs: number }[] = [];
 
     const audioEvery = Number.parseInt(audioEverySongs, 10);
@@ -198,10 +235,32 @@ export function HostPage() {
 
     const fromYear = Number.parseInt(releaseYearFrom, 10);
     const toYear = Number.parseInt(releaseYearTo, 10);
+    const bothBonus = Number.parseInt(bothBonusPoints, 10);
+    const wrongPenalty = Number.parseInt(wrongGuessPenalty, 10);
+    const winRequired = Number.parseInt(requiredPointsToWin, 10);
+
+    if (stageDurations.some((value) => !Number.isFinite(value) || value < 1)) {
+      throw new Error('Snippet durations must be whole numbers >= 1 second.');
+    }
+    if (stagePoints.some((value) => !Number.isFinite(value) || value < 0)) {
+      throw new Error('Points per snippet must be a whole number >= 0.');
+    }
+    if (!Number.isFinite(bothBonus) || bothBonus < 0) {
+      throw new Error('Bonus points for both must be a whole number >= 0.');
+    }
+    if (!Number.isFinite(wrongPenalty) || wrongPenalty < 0) {
+      throw new Error('Wrong-guess penalty must be a whole number >= 0.');
+    }
+    if (!Number.isFinite(winRequired) || winRequired < 1) {
+      throw new Error('Required points to win must be a whole number >= 1.');
+    }
 
     return {
       stage_durations: stageDurations,
       stage_points: stagePoints,
+      bonus_points_both: bothBonus,
+      wrong_guess_penalty: wrongPenalty,
+      required_points_to_win: winRequired,
       round_rules: rules,
       filters: {
         release_year_from: Number.isFinite(fromYear) ? fromYear : null,
@@ -362,6 +421,8 @@ export function HostPage() {
       setLocalSongIndex(null);
       setLocalRevealed(false);
       setLastPlayedStageIndex(0);
+      setHighestPlayedStageIndex(0);
+      setTeamRoundGuessState({});
       setError(null);
       setLocalMessage('Local game started. Click Next Song to begin a round.');
     };
@@ -495,10 +556,100 @@ export function HostPage() {
     folderInputRef.current?.click();
   };
 
-  const updateLocalScore = (teamId: string, delta: number) => {
+  const updateLocalScore = (teamId: string, delta: number, reason: string) => {
+    let updatedTeamName: string | null = null;
+    let updatedScore = 0;
+    let winnerName: string | null = null;
+    const winTarget = Number.parseInt(requiredPointsToWin, 10);
+
     setLocalTeams((previous) =>
-      previous.map((team) => (team.id === teamId ? { ...team, score: team.score + delta } : team)),
+      previous.map((team) => {
+        if (team.id !== teamId) {
+          return team;
+        }
+
+        const nextScore = Math.max(0, team.score + delta);
+        updatedTeamName = team.name;
+        updatedScore = nextScore;
+        if (Number.isFinite(winTarget) && winTarget > 0 && nextScore >= winTarget && team.score < winTarget) {
+          winnerName = team.name;
+        }
+        return { ...team, score: nextScore };
+      }),
     );
+
+    if (updatedTeamName) {
+      const direction = delta >= 0 ? '+' : '';
+      const winMessage = winnerName ? ` ${winnerName} reached ${winTarget} points and wins!` : '';
+      setLocalMessage(`${updatedTeamName}: ${reason} (${direction}${delta}) → ${updatedScore} pts.${winMessage}`);
+    }
+  };
+
+  const getActiveSnippetPoints = (): number => {
+    const points = [snippet1Points, snippet2Points, snippet3Points].map((value) => Number.parseInt(value, 10));
+    const index = Math.max(0, Math.min(points.length - 1, highestPlayedStageIndex));
+    const selected = points[index];
+    return Number.isFinite(selected) ? selected : LOCAL_STAGE_POINTS[index];
+  };
+
+  const toggleTeamFact = (teamId: string, fact: 'artist' | 'title') => {
+    if (!localCurrentSong) {
+      setLocalMessage('No active song. Click Next Song first.');
+      return;
+    }
+
+    const factPoints = getActiveSnippetPoints();
+    const bothBonus = Math.max(0, Number.parseInt(bothBonusPoints, 10) || 0);
+
+    setTeamRoundGuessState((previous) => {
+      const current = previous[teamId] ?? { artistPoints: 0, titlePoints: 0, bonusPoints: 0 };
+      const next = { ...current };
+
+      const factKey = fact === 'artist' ? 'artistPoints' : 'titlePoints';
+      const otherFactKey = fact === 'artist' ? 'titlePoints' : 'artistPoints';
+      const wasSelected = current[factKey] > 0;
+
+      let delta = 0;
+      let reason = '';
+
+      if (wasSelected) {
+        delta -= current[factKey];
+        next[factKey] = 0;
+        reason = `${fact === 'artist' ? 'Artist' : 'Title'} deselected`;
+
+        if (current.bonusPoints > 0) {
+          delta -= current.bonusPoints;
+          next.bonusPoints = 0;
+          reason = `${reason} (-both bonus)`;
+        }
+      } else {
+        next[factKey] = factPoints;
+        delta += factPoints;
+        reason = `${fact === 'artist' ? 'Artist' : 'Title'} selected`;
+
+        if (next[otherFactKey] > 0 && current.bonusPoints < 1 && bothBonus > 0) {
+          next.bonusPoints = bothBonus;
+          delta += bothBonus;
+          reason = `${reason} + both bonus`;
+        }
+      }
+
+      if (delta === 0) {
+        return previous;
+      }
+
+      updateLocalScore(teamId, delta, reason);
+      return { ...previous, [teamId]: next };
+    });
+  };
+
+  const applyWrongGuessPenalty = (teamId: string) => {
+    const penalty = Math.max(0, Number.parseInt(wrongGuessPenalty, 10) || 0);
+    if (penalty < 1) {
+      setLocalMessage('Wrong-guess penalty is set to 0.');
+      return;
+    }
+    updateLocalScore(teamId, -penalty, 'Wrong guess');
   };
 
   const playLocalSnippet = async (stageIndex: number) => {
@@ -512,6 +663,8 @@ export function HostPage() {
       }
 
       const startAtSeconds = snippetStartOffsets[stageIndex] ?? 0;
+      const stageDurations = getConfiguredStageDurations();
+      const snippetDuration = stageDurations[stageIndex] ?? LOCAL_STAGE_DURATIONS_DEFAULT[stageIndex];
 
       if (localCurrentSong.sourceType === 'spotify') {
         if (!localCurrentSong.spotifyTrackId) {
@@ -538,7 +691,7 @@ export function HostPage() {
           await api.playSpotifyRandom(
             localCurrentSong.spotifyTrackId,
             trackDurationSeconds,
-            LOCAL_STAGE_DURATIONS[stageIndex],
+            snippetDuration,
             targetDeviceId,
             startAtSeconds,
           );
@@ -549,7 +702,7 @@ export function HostPage() {
               spotifyPlayerRef.current?.pause();
               spotifyPlaybackTimer.current = null;
             },
-            LOCAL_STAGE_DURATIONS[stageIndex] * 1000,
+            snippetDuration * 1000,
           );
         } catch (firstErr) {
           const message = firstErr instanceof Error ? firstErr.message : String(firstErr);
@@ -572,7 +725,7 @@ export function HostPage() {
           await api.playSpotifyRandom(
             localCurrentSong.spotifyTrackId,
             trackDurationSeconds,
-            LOCAL_STAGE_DURATIONS[stageIndex],
+            snippetDuration,
             retryDeviceId,
             startAtSeconds,
           );
@@ -583,25 +736,27 @@ export function HostPage() {
               spotifyPlayerRef.current?.pause();
               spotifyPlaybackTimer.current = null;
             },
-            LOCAL_STAGE_DURATIONS[stageIndex] * 1000,
+            snippetDuration * 1000,
           );
         }
         setLastPlayedStageIndex(stageIndex);
+        setHighestPlayedStageIndex((previous) => Math.max(previous, stageIndex));
         setLocalMessage(
-          `Triggered Spotify snippet ${stageIndex + 1} (${LOCAL_STAGE_DURATIONS[stageIndex]}s) from ${Math.floor(startAtSeconds)}s.`,
+          `Triggered Spotify snippet ${stageIndex + 1} (${snippetDuration}s) from ${Math.floor(startAtSeconds)}s.`,
         );
         return;
       }
 
       await snippetPlayer.play({
         snippetUrl: localCurrentSong.snippetUrl,
-        durationSeconds: LOCAL_STAGE_DURATIONS[stageIndex],
+        durationSeconds: snippetDuration,
         startAtSeconds,
       });
 
       setLastPlayedStageIndex(stageIndex);
+      setHighestPlayedStageIndex((previous) => Math.max(previous, stageIndex));
       setLocalMessage(
-        `Playing snippet ${stageIndex + 1} (${LOCAL_STAGE_DURATIONS[stageIndex]}s) from ${Math.floor(startAtSeconds)}s.`,
+        `Playing snippet ${stageIndex + 1} (${snippetDuration}s) from ${Math.floor(startAtSeconds)}s.`,
       );
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -629,7 +784,8 @@ export function HostPage() {
       const nextIndex = localSongIndex === null ? 0 : (localSongIndex + 1) % localSongs.length;
       const nextSong = localSongs[nextIndex];
       const songDuration = await resolveSongDuration(nextSong);
-      const starts = LOCAL_STAGE_DURATIONS.map((stageDuration) => {
+      const stageDurations = getConfiguredStageDurations();
+      const starts = stageDurations.map((stageDuration) => {
         const maxStart = Math.max(0, songDuration - stageDuration);
         if (maxStart <= 0) {
           return 0;
@@ -641,6 +797,8 @@ export function HostPage() {
       setLocalSongIndex(nextIndex);
       setLocalRevealed(false);
       setLastPlayedStageIndex(0);
+      setHighestPlayedStageIndex(0);
+      setTeamRoundGuessState({});
       setLocalMessage('New song round started.');
     };
 
@@ -722,6 +880,8 @@ export function HostPage() {
     setLocalSongIndex(null);
     setLocalRevealed(false);
     setLastPlayedStageIndex(0);
+    setHighestPlayedStageIndex(0);
+    setTeamRoundGuessState({});
     setLocalMessage(null);
     setError(null);
   };
@@ -998,9 +1158,10 @@ export function HostPage() {
     ? {
         round_kind: 'audio',
         song_number: (localSongIndex ?? 0) + 1,
-        stage_index: lastPlayedStageIndex,
-        stage_duration_seconds: LOCAL_STAGE_DURATIONS[lastPlayedStageIndex],
-        points_available: LOCAL_STAGE_POINTS[lastPlayedStageIndex],
+        stage_index: highestPlayedStageIndex,
+        stage_duration_seconds:
+          getConfiguredStageDurations()[highestPlayedStageIndex] ?? LOCAL_STAGE_DURATIONS_DEFAULT[highestPlayedStageIndex],
+        points_available: getActiveSnippetPoints(),
         snippet_url: localCurrentSong.snippetUrl,
         can_guess: false,
         status: 'playing',
@@ -1151,6 +1312,105 @@ export function HostPage() {
                 value={language}
                 disabled={!modeDetailsEditable}
                 onChange={(event: ChangeEvent<HTMLInputElement>) => setLanguage(event.target.value)}
+              />
+            </label>
+          </div>
+
+          <div className="source-row">
+            <label>
+              Snippet 1 duration (s)
+              <input
+                type="number"
+                min={1}
+                value={snippet1Duration}
+                disabled={!modeDetailsEditable}
+                onChange={(event: ChangeEvent<HTMLInputElement>) => setSnippet1Duration(event.target.value)}
+              />
+            </label>
+            <label>
+              Snippet 2 duration (s)
+              <input
+                type="number"
+                min={1}
+                value={snippet2Duration}
+                disabled={!modeDetailsEditable}
+                onChange={(event: ChangeEvent<HTMLInputElement>) => setSnippet2Duration(event.target.value)}
+              />
+            </label>
+            <label>
+              Snippet 3 duration (s)
+              <input
+                type="number"
+                min={1}
+                value={snippet3Duration}
+                disabled={!modeDetailsEditable}
+                onChange={(event: ChangeEvent<HTMLInputElement>) => setSnippet3Duration(event.target.value)}
+              />
+            </label>
+          </div>
+
+          <div className="source-row">
+            <label>
+              Snippet 1 points
+              <input
+                type="number"
+                min={0}
+                value={snippet1Points}
+                disabled={!modeDetailsEditable}
+                onChange={(event: ChangeEvent<HTMLInputElement>) => setSnippet1Points(event.target.value)}
+              />
+            </label>
+            <label>
+              Snippet 2 points
+              <input
+                type="number"
+                min={0}
+                value={snippet2Points}
+                disabled={!modeDetailsEditable}
+                onChange={(event: ChangeEvent<HTMLInputElement>) => setSnippet2Points(event.target.value)}
+              />
+            </label>
+            <label>
+              Snippet 3 points
+              <input
+                type="number"
+                min={0}
+                value={snippet3Points}
+                disabled={!modeDetailsEditable}
+                onChange={(event: ChangeEvent<HTMLInputElement>) => setSnippet3Points(event.target.value)}
+              />
+            </label>
+          </div>
+
+          <div className="source-row">
+            <label>
+              Bonus (artist + title)
+              <input
+                type="number"
+                min={0}
+                value={bothBonusPoints}
+                disabled={!modeDetailsEditable}
+                onChange={(event: ChangeEvent<HTMLInputElement>) => setBothBonusPoints(event.target.value)}
+              />
+            </label>
+            <label>
+              Wrong guess penalty
+              <input
+                type="number"
+                min={0}
+                value={wrongGuessPenalty}
+                disabled={!modeDetailsEditable}
+                onChange={(event: ChangeEvent<HTMLInputElement>) => setWrongGuessPenalty(event.target.value)}
+              />
+            </label>
+            <label>
+              Required points to win
+              <input
+                type="number"
+                min={1}
+                value={requiredPointsToWin}
+                disabled={!modeDetailsEditable}
+                onChange={(event: ChangeEvent<HTMLInputElement>) => setRequiredPointsToWin(event.target.value)}
               />
             </label>
           </div>
@@ -1359,8 +1619,8 @@ export function HostPage() {
 
           {localCurrentSong && (
             <p>
-              Active stage points: {localRoundForPanel?.points_available ?? LOCAL_STAGE_POINTS[0]} (last snippet:{' '}
-              {lastPlayedStageIndex + 1})
+              Active stage points: {localRoundForPanel?.points_available ?? getActiveSnippetPoints()} (scoring based on
+              snippet {highestPlayedStageIndex + 1}; last played snippet {lastPlayedStageIndex + 1})
             </p>
           )}
 
@@ -1373,21 +1633,34 @@ export function HostPage() {
                 <div className="team-lane">
                   <div
                     className="team-box"
-                    style={{ left: `${Math.max(0, Math.min(1, team.score / LOCAL_MAX_POINTS)) * 90}%` }}
+                    style={{
+                      left: `${
+                        Math.max(
+                          0,
+                          Math.min(1, team.score / Math.max(1, Number.parseInt(requiredPointsToWin, 10) || LOCAL_REQUIRED_POINTS_TO_WIN)),
+                        ) * 90
+                      }%`,
+                    }}
                   >
                     {team.score}
                   </div>
                 </div>
                 <div className="team-actions">
                   <button
-                    onClick={() =>
-                      updateLocalScore(team.id, localRoundForPanel?.points_available ?? LOCAL_STAGE_POINTS[lastPlayedStageIndex])
-                    }
+                    onClick={() => toggleTeamFact(team.id, 'artist')}
                     disabled={!localCurrentSong}
                   >
-                    +Stage Points
+                    Artist {teamRoundGuessState[team.id]?.artistPoints ? '✓' : ''}
                   </button>
-                  <button onClick={() => updateLocalScore(team.id, -10)}>-10</button>
+                  <button
+                    onClick={() => toggleTeamFact(team.id, 'title')}
+                    disabled={!localCurrentSong}
+                  >
+                    Title {teamRoundGuessState[team.id]?.titlePoints ? '✓' : ''}
+                  </button>
+                  <button onClick={() => applyWrongGuessPenalty(team.id)} disabled={!localCurrentSong}>
+                    Wrong (-{Math.max(0, Number.parseInt(wrongGuessPenalty, 10) || 0)})
+                  </button>
                 </div>
               </div>
             ))}

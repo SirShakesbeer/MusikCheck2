@@ -232,6 +232,9 @@ class GameEngine:
             name=mode.name,
             stage_durations=mode.stage_durations,
             stage_points=mode.stage_points,
+            bonus_points_both=mode.bonus_points_both,
+            wrong_guess_penalty=mode.wrong_guess_penalty,
+            required_points_to_win=mode.required_points_to_win,
             round_rules=[
                 RoundTypeRuleState(kind=rule.kind, every_n_songs=rule.every_n_songs)
                 for rule in mode.round_rules

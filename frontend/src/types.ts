@@ -47,6 +47,9 @@ export type GameModeConfig = {
   stage_durations: number[];
   stage_points: number[];
   round_rules: RoundTypeRule[];
+  bonus_points_both: number;
+  wrong_guess_penalty: number;
+  required_points_to_win: number;
   filters: GameModeFilters;
 };
 
@@ -55,6 +58,9 @@ export type GameModePresetState = {
   name: string;
   stage_durations: number[];
   stage_points: number[];
+  bonus_points_both: number;
+  wrong_guess_penalty: number;
+  required_points_to_win: number;
   round_rules: RoundTypeRule[];
   filters: GameModeFilters;
   requires_phone_connections: boolean;

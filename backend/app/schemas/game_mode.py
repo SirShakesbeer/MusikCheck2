@@ -16,6 +16,9 @@ class GameModePresetConfig(BaseModel):
     stage_durations: list[int] = Field(min_length=1)
     stage_points: list[int] = Field(min_length=1)
     round_rules: list[RoundTypeRuleState] = Field(min_length=1)
+    bonus_points_both: int = Field(default=1, ge=0)
+    wrong_guess_penalty: int = Field(default=0, ge=0)
+    required_points_to_win: int = Field(default=15, ge=1)
     filters: GameModeFiltersState = Field(default_factory=GameModeFiltersState)
 
 
@@ -25,6 +28,9 @@ class GameModePresetState(BaseModel):
     stage_durations: list[int]
     stage_points: list[int]
     round_rules: list[RoundTypeRuleState]
+    bonus_points_both: int = Field(default=1, ge=0)
+    wrong_guess_penalty: int = Field(default=0, ge=0)
+    required_points_to_win: int = Field(default=15, ge=1)
     filters: GameModeFiltersState = Field(default_factory=GameModeFiltersState)
     requires_phone_connections: bool = False
 

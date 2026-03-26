@@ -27,6 +27,9 @@ class GameModePreset:
     stage_durations: list[int]
     stage_points: list[int]
     round_rules: list[RoundTypeRule]
+    bonus_points_both: int = 1
+    wrong_guess_penalty: int = 0
+    required_points_to_win: int = 15
     filters: dict[str, Any] = field(default_factory=dict)
 
     def validate(self) -> None:
@@ -42,6 +45,12 @@ class GameModePreset:
             raise ValueError("All stage durations must be >= 1")
         if any(value < 0 for value in self.stage_points):
             raise ValueError("All stage points must be >= 0")
+        if self.bonus_points_both < 0:
+            raise ValueError("bonus_points_both must be >= 0")
+        if self.wrong_guess_penalty < 0:
+            raise ValueError("wrong_guess_penalty must be >= 0")
+        if self.required_points_to_win < 1:
+            raise ValueError("required_points_to_win must be >= 1")
         if len(self.round_rules) < 1:
             raise ValueError("At least one round rule is required")
 
@@ -66,6 +75,9 @@ class GameModePreset:
             "name": self.name,
             "stage_durations": self.stage_durations,
             "stage_points": self.stage_points,
+            "bonus_points_both": self.bonus_points_both,
+            "wrong_guess_penalty": self.wrong_guess_penalty,
+            "required_points_to_win": self.required_points_to_win,
             "round_rules": [
                 {
                     "kind": rule.kind,
@@ -93,6 +105,9 @@ class GameModePreset:
             stage_durations=[int(value) for value in (payload.get("stage_durations") or [])],
             stage_points=[int(value) for value in (payload.get("stage_points") or [])],
             round_rules=rules,
+            bonus_points_both=int(payload.get("bonus_points_both", 1)),
+            wrong_guess_penalty=int(payload.get("wrong_guess_penalty", 0)),
+            required_points_to_win=int(payload.get("required_points_to_win", 15)),
             filters=payload.get("filters") if isinstance(payload.get("filters"), dict) else {},
         )
         preset.validate()
@@ -131,6 +146,9 @@ class GameModeService:
         stage_durations: list[int],
         stage_points: list[int],
         round_rules: list[RoundTypeRule],
+        bonus_points_both: int,
+        wrong_guess_penalty: int,
+        required_points_to_win: int,
         filters: dict[str, Any] | None = None,
     ) -> GameModePreset:
         key = self._slugify(name)
@@ -140,6 +158,9 @@ class GameModeService:
             stage_durations=[int(value) for value in stage_durations],
             stage_points=[int(value) for value in stage_points],
             round_rules=round_rules,
+            bonus_points_both=int(bonus_points_both),
+            wrong_guess_penalty=int(wrong_guess_penalty),
+            required_points_to_win=int(required_points_to_win),
             filters=filters or {},
         )
         preset.validate()
@@ -223,6 +244,9 @@ class GameModeService:
                 name="Classic Audio",
                 stage_durations=[2, 5, 8],
                 stage_points=[100, 60, 30],
+                bonus_points_both=1,
+                wrong_guess_penalty=10,
+                required_points_to_win=300,
                 round_rules=[RoundTypeRule(kind="audio", every_n_songs=1)],
                 filters={},
             ),
@@ -231,6 +255,9 @@ class GameModeService:
                 name="Mixed Media",
                 stage_durations=[2, 5, 8],
                 stage_points=[100, 60, 30],
+                bonus_points_both=1,
+                wrong_guess_penalty=10,
+                required_points_to_win=300,
                 round_rules=[
                     RoundTypeRule(kind="audio", every_n_songs=1),
                     RoundTypeRule(kind="video", every_n_songs=5),
