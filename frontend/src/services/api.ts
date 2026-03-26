@@ -4,6 +4,11 @@ import type {
   IngestPreviewEnvelope,
   RegisterLocalSourceEnvelope,
   RuntimeConfigEnvelope,
+  SpotifyActivateDeviceEnvelope,
+  SpotifyAuthUrlEnvelope,
+  SpotifyAccessTokenEnvelope,
+  SpotifyPlayRandomEnvelope,
+  SpotifyStatusEnvelope,
   RunLocalIndexEnvelope,
   RunSourceSyncEnvelope,
 } from '../types';
@@ -18,8 +23,9 @@ async function post<TResponse, TBody extends object>(path: string, body?: TBody)
   });
 
   if (!response.ok) {
-    const error = await response.text();
-    throw new Error(error || `Request failed: ${response.status}`);
+    const errorText = await response.text();
+    const parsed = safeParseError(errorText);
+    throw new Error(parsed || `Request failed: ${response.status}`);
   }
 
   return response.json() as Promise<TResponse>;
@@ -29,14 +35,52 @@ async function get<TResponse>(path: string): Promise<TResponse> {
   const response = await fetch(`${API_BASE}${path}`);
 
   if (!response.ok) {
-    const error = await response.text();
-    throw new Error(error || `Request failed: ${response.status}`);
+    const errorText = await response.text();
+    const parsed = safeParseError(errorText);
+    throw new Error(parsed || `Request failed: ${response.status}`);
   }
 
   return response.json() as Promise<TResponse>;
 }
 
+function safeParseError(raw: string): string | null {
+  const text = raw?.trim();
+  if (!text) return null;
+  try {
+    const parsed = JSON.parse(text);
+    if (typeof parsed?.detail === 'string' && parsed.detail.trim()) {
+      return parsed.detail;
+    }
+  } catch {
+  }
+  return text;
+}
+
 export const api = {
+  getSpotifyAuthUrl: () => get<SpotifyAuthUrlEnvelope>('/spotify/auth-url'),
+  getSpotifyStatus: () => get<SpotifyStatusEnvelope>('/spotify/status'),
+  getSpotifyAccessToken: () => get<SpotifyAccessTokenEnvelope>('/spotify/access-token'),
+  activateSpotifyDevice: (deviceId: string) =>
+    post<SpotifyActivateDeviceEnvelope, { device_id: string }>('/spotify/activate-device', {
+      device_id: deviceId,
+    }),
+  playSpotifyRandom: (
+    trackId: string,
+    trackDurationSeconds: number,
+    snippetDurationSeconds: number,
+    deviceId?: string,
+    startAtSeconds?: number,
+  ) =>
+    post<
+      SpotifyPlayRandomEnvelope,
+      { track_id: string; track_duration_seconds: number; snippet_duration_seconds: number; device_id?: string; start_at_seconds?: number }
+    >('/spotify/play-random', {
+      track_id: trackId,
+      track_duration_seconds: trackDurationSeconds,
+      snippet_duration_seconds: snippetDurationSeconds,
+      device_id: deviceId,
+      start_at_seconds: startAtSeconds,
+    }),
   getRuntimeConfig: () => get<RuntimeConfigEnvelope>('/runtime/config'),
   updateRuntimeConfig: (testMode: boolean) =>
     post<RuntimeConfigEnvelope, { test_mode: boolean }>('/runtime/config', { test_mode: testMode }),

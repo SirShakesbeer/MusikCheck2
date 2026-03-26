@@ -8,6 +8,7 @@ from app.services.game_mode_registry import GameModeRegistry
 from app.services.media_library_service import MediaLibraryService
 from app.services.media_ingestion_service import MediaIngestionService
 from app.services.media_processing_service import MediaProcessingService
+from app.services.spotify_oauth_service import SpotifyOAuthService
 
 
 media_ingestion_service = MediaIngestionService(
@@ -20,6 +21,7 @@ media_ingestion_service = MediaIngestionService(
 )
 media_processing_service = MediaProcessingService()
 media_library_service = MediaLibraryService()
+spotify_oauth_service = SpotifyOAuthService()
 game_mode_registry = GameModeRegistry([ClassicAudioMode()])
 game_engine = GameEngine(
     mode_registry=game_mode_registry,

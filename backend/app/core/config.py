@@ -15,6 +15,10 @@ class Settings(BaseSettings):
     test_mode: bool = True
     youtube_api_key: str | None = None
     youtube_default_playlist: str | None = None
+    spotify_client_id: str | None = None
+    spotify_client_secret: str | None = None
+    spotify_redirect_uri: str = "http://127.0.0.1:8000/api/spotify/callback"
+    spotify_scopes: str = "streaming user-read-email user-read-private user-read-playback-state user-modify-playback-state"
 
     model_config = SettingsConfigDict(env_file=str(ENV_FILE), env_file_encoding="utf-8", extra="ignore")
 

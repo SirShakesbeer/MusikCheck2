@@ -115,18 +115,40 @@ class MediaLibraryService:
                 values = parse_qs(parsed.query).get("v")
                 if values:
                     external_track_key = values[0]
+            elif source.provider_key == "spotify_playlist":
+                parts = [segment for segment in item.source_id.split(":") if segment]
+                if parts:
+                    external_track_key = parts[-1]
+
+            duration_seconds = max(0, int(item.duration_seconds or 0))
+            duration_ms = duration_seconds * 1000
 
             existing = (
                 db.query(IndexedTrack)
-                .filter(IndexedTrack.source_id == source.id)
                 .filter(IndexedTrack.file_path == external_track_key)
                 .first()
             )
             if existing:
-                if existing.title == item.title and existing.artist == item.artist:
+                was_changed = False
+
+                if existing.source_id != source.id:
+                    existing.source_id = source.id
+                    was_changed = True
+
+                if existing.title != item.title:
+                    existing.title = item.title
+                    was_changed = True
+
+                if existing.artist != item.artist:
+                    existing.artist = item.artist
+                    was_changed = True
+
+                if duration_ms > 0 and existing.file_size != duration_ms:
+                    existing.file_size = duration_ms
+                    was_changed = True
+
+                if not was_changed:
                     continue
-                existing.title = item.title
-                existing.artist = item.artist
             else:
                 db.add(
                     IndexedTrack(
@@ -135,7 +157,7 @@ class MediaLibraryService:
                         title=item.title,
                         artist=item.artist,
                         file_mtime=0,
-                        file_size=0,
+                        file_size=duration_ms,
                     )
                 )
             changed_count += 1

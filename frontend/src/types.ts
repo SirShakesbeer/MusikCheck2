@@ -111,3 +111,40 @@ export type IndexedTracksEnvelope = {
     tracks: IndexedTrackState[];
   };
 };
+
+export type SpotifyAuthUrlEnvelope = {
+  ok: boolean;
+  data: {
+    auth_url: string;
+  };
+};
+
+export type SpotifyStatusEnvelope = {
+  ok: boolean;
+  data: {
+    connected: boolean;
+    expires_in_seconds?: number | null;
+  };
+};
+
+export type SpotifyPlayRandomEnvelope = {
+  ok: boolean;
+  data: {
+    track_id: string;
+    position_ms: number;
+  };
+};
+
+export type SpotifyAccessTokenEnvelope = {
+  ok: boolean;
+  data: {
+    access_token: string;
+  };
+};
+
+export type SpotifyActivateDeviceEnvelope = {
+  ok: boolean;
+  data: {
+    device_id: string;
+  };
+};

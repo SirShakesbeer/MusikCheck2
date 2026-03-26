@@ -34,6 +34,7 @@ type LocalSong = {
   sourceValue: string;
   snippetUrl: string;
   durationSeconds?: number;
+  spotifyTrackId?: string;
 };
 
 const LOCAL_STAGE_DURATIONS = [2, 5, 8];
@@ -97,6 +98,26 @@ export function HostPage() {
   const [youtubeApiConfigured, setYoutubeApiConfigured] = useState<boolean>(false);
   const [runtimeConfigBusy, setRuntimeConfigBusy] = useState<boolean>(false);
   const [playerPopup, setPlayerPopup] = useState<Window | null>(null);
+  const [spotifyConnected, setSpotifyConnected] = useState<boolean>(false);
+  const [spotifyAuthBusy, setSpotifyAuthBusy] = useState<boolean>(false);
+  const [spotifyDeviceId, setSpotifyDeviceId] = useState<string | null>(null);
+  const spotifyDeviceIdRef = useRef<string | null>(null);
+  const spotifyPlayerRef = useRef<any>(null);
+  const spotifyPlaybackTimer = useRef<number | null>(null);
+
+  const stopAllPlayback = () => {
+    // Stop HTML audio/YouTube playback
+    snippetPlayer.stop();
+    
+    // Stop Spotify playback
+    if (spotifyPlaybackTimer.current !== null) {
+      window.clearTimeout(spotifyPlaybackTimer.current);
+      spotifyPlaybackTimer.current = null;
+    }
+    if (spotifyPlayerRef.current) {
+      void spotifyPlayerRef.current.pause();
+    }
+  };
 
   const providerKeyByType: Record<SourceType, string> = {
     'youtube-playlist': 'youtube_playlist',
@@ -121,6 +142,8 @@ export function HostPage() {
         const result = await api.getRuntimeConfig();
         setRuntimeTestMode(Boolean(result.data.test_mode));
         setYoutubeApiConfigured(Boolean(result.data.youtube_api_key_configured));
+        const spotify = await api.getSpotifyStatus();
+        setSpotifyConnected(Boolean(spotify.data.connected));
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));
       }
@@ -179,6 +202,7 @@ export function HostPage() {
           sourceValue: track.source_value,
           snippetUrl: track.playback_url.startsWith('http') ? track.playback_url : `${apiBase}${track.playback_url}`,
           durationSeconds: typeof track.duration_seconds === 'number' ? track.duration_seconds : undefined,
+          spotifyTrackId: track.provider_key === 'spotify_playlist' ? track.file_path : undefined,
         }));
 
         if (dynamicSongs.length < 1) {
@@ -313,23 +337,110 @@ export function HostPage() {
   };
 
   const playLocalSnippet = async (stageIndex: number) => {
-    if (!localCurrentSong) {
-      setLocalMessage('Click Next Song first.');
-      return;
+    try {
+      // Stop any currently playing audio
+      stopAllPlayback();
+
+      if (!localCurrentSong) {
+        setLocalMessage('Click Next Song first.');
+        return;
+      }
+
+      const startAtSeconds = snippetStartOffsets[stageIndex] ?? 0;
+
+      if (localCurrentSong.sourceType === 'spotify') {
+        if (!localCurrentSong.spotifyTrackId) {
+          setError('Spotify track id is missing for this song.');
+          return;
+        }
+        if (!spotifyConnected) {
+          setError('Connect Spotify first to play Spotify snippets.');
+          return;
+        }
+
+        const trackDurationSeconds = Math.max(1, Math.floor(localCurrentSong.durationSeconds ?? 180));
+        const targetDeviceId = await ensureSpotifyBrowserDevice();
+        if (!targetDeviceId) {
+          setError('Spotify browser device not detected. Close any other Spotify tabs/apps, keep this page open, and try again.');
+          return;
+        }
+
+        console.log('[Spotify] Activating device:', targetDeviceId);
+        await api.activateSpotifyDevice(targetDeviceId);
+        
+        try {
+          console.log('[Spotify] Playing track with device:', targetDeviceId);
+          await api.playSpotifyRandom(
+            localCurrentSong.spotifyTrackId,
+            trackDurationSeconds,
+            LOCAL_STAGE_DURATIONS[stageIndex],
+            targetDeviceId,
+            startAtSeconds,
+          );
+          
+          // Set timer to stop playback after snippet duration
+          spotifyPlaybackTimer.current = window.setTimeout(
+            () => {
+              spotifyPlayerRef.current?.pause();
+              spotifyPlaybackTimer.current = null;
+            },
+            LOCAL_STAGE_DURATIONS[stageIndex] * 1000,
+          );
+        } catch (firstErr) {
+          const message = firstErr instanceof Error ? firstErr.message : String(firstErr);
+          console.error('[Spotify] Play failed:', message);
+          if (!message.toLowerCase().includes('device')) {
+            throw firstErr;
+          }
+
+          console.log('[Spotify] Device unavailable, clearing cache and retrying...');
+          spotifyDeviceIdRef.current = null;
+          setSpotifyDeviceId(null);
+          await new Promise((resolve) => window.setTimeout(resolve, 1500));
+          
+          const retryDeviceId = await ensureSpotifyBrowserDevice();
+          if (!retryDeviceId) {
+            throw new Error('Spotify browser device still not available. Close other Spotify tabs and ensure Premium is active.');
+          }
+          console.log('[Spotify] Retry with device:', retryDeviceId);
+          await api.activateSpotifyDevice(retryDeviceId);
+          await api.playSpotifyRandom(
+            localCurrentSong.spotifyTrackId,
+            trackDurationSeconds,
+            LOCAL_STAGE_DURATIONS[stageIndex],
+            retryDeviceId,
+            startAtSeconds,
+          );
+          
+          // Set timer to stop playback after snippet duration
+          spotifyPlaybackTimer.current = window.setTimeout(
+            () => {
+              spotifyPlayerRef.current?.pause();
+              spotifyPlaybackTimer.current = null;
+            },
+            LOCAL_STAGE_DURATIONS[stageIndex] * 1000,
+          );
+        }
+        setLastPlayedStageIndex(stageIndex);
+        setLocalMessage(
+          `Triggered Spotify snippet ${stageIndex + 1} (${LOCAL_STAGE_DURATIONS[stageIndex]}s) from ${Math.floor(startAtSeconds)}s.`,
+        );
+        return;
+      }
+
+      await snippetPlayer.play({
+        snippetUrl: localCurrentSong.snippetUrl,
+        durationSeconds: LOCAL_STAGE_DURATIONS[stageIndex],
+        startAtSeconds,
+      });
+
+      setLastPlayedStageIndex(stageIndex);
+      setLocalMessage(
+        `Playing snippet ${stageIndex + 1} (${LOCAL_STAGE_DURATIONS[stageIndex]}s) from ${Math.floor(startAtSeconds)}s.`,
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
     }
-
-    const startAtSeconds = snippetStartOffsets[stageIndex] ?? 0;
-
-    await snippetPlayer.play({
-      snippetUrl: localCurrentSong.snippetUrl,
-      durationSeconds: LOCAL_STAGE_DURATIONS[stageIndex],
-      startAtSeconds,
-    });
-
-    setLastPlayedStageIndex(stageIndex);
-    setLocalMessage(
-      `Playing snippet ${stageIndex + 1} (${LOCAL_STAGE_DURATIONS[stageIndex]}s) from ${Math.floor(startAtSeconds)}s.`,
-    );
   };
 
   const revealLocalSong = () => {
@@ -341,6 +452,9 @@ export function HostPage() {
   };
 
   const nextLocalSong = () => {
+    // Stop any currently playing audio before starting new round
+    stopAllPlayback();
+
     if (localSongs.length < 1) {
       setLocalMessage('No songs available. Add and sync sources first.');
       return;
@@ -450,6 +564,46 @@ export function HostPage() {
     }
   };
 
+  const connectSpotify = async () => {
+    setSpotifyAuthBusy(true);
+    try {
+      const auth = await api.getSpotifyAuthUrl();
+      const popup = window.open(auth.data.auth_url, 'spotify-oauth', 'width=520,height=720,resizable=yes');
+      if (!popup) {
+        setError('Popup was blocked. Please allow popups for Spotify login.');
+        setSpotifyAuthBusy(false);
+        return;
+      }
+
+      const startedAt = Date.now();
+      const intervalId = window.setInterval(async () => {
+        const elapsedMs = Date.now() - startedAt;
+        if (elapsedMs > 120000) {
+          window.clearInterval(intervalId);
+          setSpotifyAuthBusy(false);
+          return;
+        }
+
+        try {
+          const status = await api.getSpotifyStatus();
+          if (status.data.connected) {
+            setSpotifyConnected(true);
+            void initializeSpotifyWebPlayer();
+            setSpotifyAuthBusy(false);
+            window.clearInterval(intervalId);
+            if (!popup.closed) {
+              popup.close();
+            }
+          }
+        } catch {
+        }
+      }, 1500);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+      setSpotifyAuthBusy(false);
+    }
+  };
+
   const getYoutubeWatchUrl = (embedUrl: string): string =>
     embedUrl.replace('/embed/', '/watch?v=').replace('?autoplay=1', '').replace('&autoplay=1', '');
 
@@ -468,6 +622,8 @@ export function HostPage() {
     const body =
       localCurrentSong.sourceType === 'youtube'
         ? `<iframe width="100%" height="220" src="${localCurrentSong.snippetUrl.replace('autoplay=1', 'autoplay=0')}" title="Revealed song player" allow="autoplay; encrypted-media" allowfullscreen></iframe>`
+        : localCurrentSong.sourceType === 'spotify'
+          ? `<p><a href="${localCurrentSong.snippetUrl}" target="_blank" rel="noreferrer">Open this track in Spotify</a></p>`
         : `<audio controls autoplay src="${localCurrentSong.snippetUrl}" style="width:100%"></audio>`;
     const extra =
       localCurrentSong.sourceType === 'youtube'
@@ -487,8 +643,169 @@ export function HostPage() {
   };
 
   useEffect(() => {
+    if (spotifyConnected) {
+      void initializeSpotifyWebPlayer();
+    }
+  }, [spotifyConnected]);
+
+  const initializeSpotifyWebPlayer = async (forceRecreate = false) => {
+    if (forceRecreate && spotifyPlayerRef.current) {
+      try {
+        spotifyPlayerRef.current.disconnect();
+      } catch {
+      }
+      spotifyPlayerRef.current = null;
+      spotifyDeviceIdRef.current = null;
+      setSpotifyDeviceId(null);
+    }
+
+    if (spotifyPlayerRef.current) {
+      return;
+    }
+
+    const loadSdk = () =>
+      new Promise<void>((resolve) => {
+        const existing = document.querySelector('script[data-spotify-sdk="true"]');
+        if (existing) {
+          resolve();
+          return;
+        }
+        const script = document.createElement('script');
+        script.src = 'https://sdk.scdn.co/spotify-player.js';
+        script.async = true;
+        script.setAttribute('data-spotify-sdk', 'true');
+        script.onload = () => resolve();
+        document.body.appendChild(script);
+      });
+
+    await loadSdk();
+
+    const windowWithSpotify = window as Window & {
+      Spotify?: {
+        Player: new (config: {
+          name: string;
+          getOAuthToken: (callback: (token: string) => void) => void;
+          volume?: number;
+        }) => {
+          addListener: (event: string, callback: (...args: any[]) => void) => void;
+          connect: () => Promise<boolean>;
+          disconnect: () => void;
+          activateElement?: () => Promise<void> | void;
+        };
+      };
+      onSpotifyWebPlaybackSDKReady?: () => void;
+    };
+
+    const createPlayer = async () => {
+      if (!windowWithSpotify.Spotify) {
+        return;
+      }
+      const player = new windowWithSpotify.Spotify.Player({
+        name: 'MusikCheck2 Browser Player',
+        getOAuthToken: async (callback: (token: string) => void) => {
+          const token = await api.getSpotifyAccessToken();
+          callback(token.data.access_token);
+        },
+        volume: 0.8,
+      });
+
+      player.addListener('ready', ({ device_id }: { device_id: string }) => {
+        spotifyDeviceIdRef.current = device_id;
+        setSpotifyDeviceId(device_id);
+        console.log('[Spotify SDK] Device ready:', device_id);
+      });
+      player.addListener('not_ready', ({ device_id }: { device_id: string }) => {
+        if (spotifyDeviceIdRef.current === device_id) {
+          spotifyDeviceIdRef.current = null;
+          setSpotifyDeviceId(null);
+        }
+      });
+      player.addListener('initialization_error', ({ message }: { message: string }) => setError(message));
+      player.addListener('authentication_error', ({ message }: { message: string }) => setError(message));
+      player.addListener('account_error', ({ message }: { message: string }) => setError(message));
+
+      const connected = await player.connect();
+      if (!connected) {
+        throw new Error('Spotify SDK player could not connect. Keep this tab open and try again.');
+      }
+
+      spotifyPlayerRef.current = player;
+      await new Promise((resolve) => window.setTimeout(resolve, 1200));
+    };
+
+    if (windowWithSpotify.Spotify) {
+      await createPlayer();
+      return;
+    }
+
+    await new Promise<void>((resolve) => {
+      windowWithSpotify.onSpotifyWebPlaybackSDKReady = () => {
+        void createPlayer().finally(() => resolve());
+      };
+    });
+  };
+
+  const ensureSpotifyBrowserDevice = async (): Promise<string | null> => {
+    await initializeSpotifyWebPlayer();
+
+    const player = spotifyPlayerRef.current as
+      | { activateElement?: () => Promise<void> | void; connect?: () => Promise<boolean> }
+      | null;
+    if (player?.connect && !spotifyDeviceIdRef.current) {
+      console.log('[Spotify SDK] Connecting player...');
+      await player.connect();
+      await new Promise((resolve) => window.setTimeout(resolve, 1200));
+    }
+    if (player?.activateElement) {
+      console.log('[Spotify SDK] Activating element...');
+      await player.activateElement();
+    }
+
+    if (spotifyDeviceIdRef.current) {
+      console.log('[Spotify SDK] Using cached device:', spotifyDeviceIdRef.current);
+      return spotifyDeviceIdRef.current;
+    }
+
+    const timeoutMs = 8000;
+    const startedAt = Date.now();
+    while (Date.now() - startedAt < timeoutMs) {
+      await new Promise((resolve) => window.setTimeout(resolve, 300));
+      if (spotifyDeviceIdRef.current) {
+        console.log('[Spotify SDK] Device ready after wait:', spotifyDeviceIdRef.current);
+        return spotifyDeviceIdRef.current;
+      }
+    }
+
+    console.warn('[Spotify SDK] First device wait timed out, recreating player...');
+    await initializeSpotifyWebPlayer(true);
+
+    const recreatedPlayer = spotifyPlayerRef.current as
+      | { activateElement?: () => Promise<void> | void; connect?: () => Promise<boolean> }
+      | null;
+    if (recreatedPlayer?.activateElement) {
+      console.log('[Spotify SDK] Activating element after recreate...');
+      await recreatedPlayer.activateElement();
+    }
+
+    const retryStartedAt = Date.now();
+    while (Date.now() - retryStartedAt < timeoutMs) {
+      await new Promise((resolve) => window.setTimeout(resolve, 300));
+      if (spotifyDeviceIdRef.current) {
+        console.log('[Spotify SDK] Device ready after recreate:', spotifyDeviceIdRef.current);
+        return spotifyDeviceIdRef.current;
+      }
+    }
+
+    console.warn('[Spotify SDK] Device ID not available after timeout');
+    return null;
+  };
+
+  useEffect(() => {
     return () => {
       snippetPlayer.dispose();
+      if (spotifyPlayerRef.current) {
+        spotifyPlayerRef.current.disconnect();
+      }
       if (playerPopup && !playerPopup.closed) {
         playerPopup.close();
       }
@@ -532,6 +849,12 @@ export function HostPage() {
           {!runtimeTestMode && !youtubeApiConfigured && (
             <p>YouTube API key is not configured; real YouTube ingestion will fail.</p>
           )}
+          <p>
+            Spotify: {spotifyConnected ? 'Connected' : 'Not connected'}
+            <button onClick={connectSpotify} disabled={spotifyAuthBusy} style={{ marginLeft: 8 }}>
+              {spotifyAuthBusy ? 'Connecting...' : 'Connect Spotify'}
+            </button>
+          </p>
           <button onClick={() => setMode('single-tv')}>Single TV (one mouse)</button>
           <button onClick={() => setMode('multiplayer')}>Phone Connections (optional)</button>
         </section>
@@ -651,7 +974,16 @@ export function HostPage() {
                 <button onClick={openPlayerPopup}>Pop out player</button>
               </p>
               {localCurrentSong.sourceType !== 'youtube' ? (
-                <audio controls src={localCurrentSong.snippetUrl} style={{ width: '100%', maxWidth: 560 }} />
+                localCurrentSong.sourceType === 'spotify' ? (
+                  <p>
+                    Full playback for Spotify opens in Spotify app/web player.
+                    <a href={localCurrentSong.snippetUrl} target="_blank" rel="noreferrer" style={{ marginLeft: 8 }}>
+                      Open in Spotify
+                    </a>
+                  </p>
+                ) : (
+                  <audio controls src={localCurrentSong.snippetUrl} style={{ width: '100%', maxWidth: 560 }} />
+                )
               ) : (
                 <p>
                   Audio-only full-song playback for YouTube is not available in-browser with playlist metadata links.

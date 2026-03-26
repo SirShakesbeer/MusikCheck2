@@ -20,7 +20,7 @@ Modular web-based multiplayer music quiz party game prototype.
   - local files
   - text list
   - YouTube playlist (YouTube Data API)
-  - Spotify playlist metadata (stub)
+  - Spotify playlist metadata (Spotify Web API client credentials)
 - `backend/app/services/media_ingestion_service.py` handles provider registration + normalization entry point
 - `POST /api/media/ingest-preview` connects source inputs from the host setup UI to provider ingestion for validation/preview
 - `POST /api/media/sources/register` registers any provider source value (including YouTube playlists)
@@ -137,6 +137,10 @@ Create `backend/.env` (or export env vars) for real YouTube-backed rounds:
 ```bash
 TEST_MODE=false
 YOUTUBE_API_KEY=your_api_key
+SPOTIFY_CLIENT_ID=your_spotify_client_id
+SPOTIFY_CLIENT_SECRET=your_spotify_client_secret
+SPOTIFY_REDIRECT_URI=http://127.0.0.1:8000/api/spotify/callback
+SPOTIFY_SCOPES=streaming user-read-email user-read-private user-read-playback-state user-modify-playback-state
 # Optional fallback playlist when no indexed sources exist
 YOUTUBE_DEFAULT_PLAYLIST=PLxxxxxxxxxxxx
 ```
@@ -148,6 +152,16 @@ If you want PostgreSQL locally instead of SQLite, set:
 ```bash
 DATABASE_URL=postgresql+psycopg://musikcheck:musikcheck@localhost:5432/musikcheck
 ```
+
+Spotify integration note:
+
+- Playlist ingestion now fetches real track metadata (title/artist/duration) from Spotify playlists.
+- Host menu includes Spotify OAuth connect flow.
+- For Spotify snippets, the app triggers random-start playback via Spotify Web API (`/me/player/play`).
+- Spotify playback requires an active Spotify playback device and typically a Premium account.
+- In your Spotify app settings, add the exact redirect URI used by backend (for local dev: `http://127.0.0.1:8000/api/spotify/callback`).
+- For loopback HTTP redirects, Spotify requires explicit IP (`127.0.0.1` or `[::1]`), not `localhost`.
+- If you change Spotify scopes, reconnect Spotify (authorize again) so a new access token is issued with updated scopes.
 
 ### Frontend
 
@@ -166,5 +180,14 @@ npm run dev
 - Persist rounds/songs/history tables
 - Add authentication and host permissions
 - Add provider-specific ingestion workers
+- make gamemode modular and create presets (which modes are included + frequency)
+- add a local database ingestion tool that can be connected in the ui
+- create persistance of user info (settings, user created gamemodes, highscores, connected local databases)
+- add point system
 
 ### UI
+
+- fix UI placement
+- update point display
+- add point buttons
+- update graphics

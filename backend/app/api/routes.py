@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, HTMLResponse
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -19,6 +19,15 @@ from app.schemas.media import (
     RunIndexResponse,
     RunSourceSyncResponse,
 )
+from app.schemas.spotify import (
+    SpotifyAccessTokenResponse,
+    SpotifyActivateDeviceRequest,
+    SpotifyActivateDeviceResponse,
+    SpotifyAuthUrlResponse,
+    SpotifyConnectionState,
+    SpotifyPlayRandomRequest,
+    SpotifyPlayRandomResponse,
+)
 from app.schemas.game import (
     ApiEnvelope,
     CreateLobbyRequest,
@@ -28,7 +37,13 @@ from app.schemas.game import (
     RuntimeConfigUpdateRequest,
     StopRequest,
 )
-from app.services.service_container import game_engine, game_mode_registry, media_ingestion_service, media_library_service
+from app.services.service_container import (
+    game_engine,
+    game_mode_registry,
+    media_ingestion_service,
+    media_library_service,
+    spotify_oauth_service,
+)
 
 router = APIRouter()
 
@@ -41,6 +56,74 @@ def list_modes() -> dict:
 @router.get("/providers")
 def list_providers() -> dict:
     return {"ok": True, "data": media_ingestion_service.providers}
+
+
+@router.get("/spotify/auth-url", response_model=dict)
+def get_spotify_auth_url() -> dict:
+    try:
+        data = SpotifyAuthUrlResponse(auth_url=spotify_oauth_service.auth_url())
+        return {"ok": True, "data": data.model_dump()}
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
+
+@router.get("/spotify/callback")
+def spotify_callback(code: str | None = None, state: str | None = None, error: str | None = None):
+    if error:
+        return HTMLResponse(f"<h3>Spotify authorization failed: {error}</h3>")
+    if not code:
+        raise HTTPException(status_code=400, detail="Missing Spotify authorization code")
+
+    try:
+        spotify_oauth_service.exchange_code(code, state)
+    except ValueError as exc:
+        return HTMLResponse(f"<h3>Spotify authorization failed: {exc}</h3>", status_code=400)
+
+    return HTMLResponse(
+        "<script>window.close()</script><p>Spotify connected. You can close this window.</p>"
+    )
+
+
+@router.get("/spotify/status", response_model=dict)
+def spotify_status() -> dict:
+    connected, expires = spotify_oauth_service.status()
+    data = SpotifyConnectionState(connected=connected, expires_in_seconds=expires)
+    return {"ok": True, "data": data.model_dump()}
+
+
+@router.get("/spotify/access-token", response_model=dict)
+def spotify_access_token() -> dict:
+    try:
+        data = SpotifyAccessTokenResponse(access_token=spotify_oauth_service.access_token())
+        return {"ok": True, "data": data.model_dump()}
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
+
+@router.post("/spotify/play-random", response_model=dict)
+def spotify_play_random(payload: SpotifyPlayRandomRequest) -> dict:
+    try:
+        position_ms = spotify_oauth_service.play_track_random(
+            track_id=payload.track_id,
+            track_duration_seconds=payload.track_duration_seconds,
+            snippet_duration_seconds=payload.snippet_duration_seconds,
+            device_id=payload.device_id,
+            start_at_seconds=payload.start_at_seconds,
+        )
+        data = SpotifyPlayRandomResponse(track_id=payload.track_id, position_ms=position_ms)
+        return {"ok": True, "data": data.model_dump()}
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
+
+@router.post("/spotify/activate-device", response_model=dict)
+def spotify_activate_device(payload: SpotifyActivateDeviceRequest) -> dict:
+    try:
+        spotify_oauth_service.activate_device(payload.device_id)
+        data = SpotifyActivateDeviceResponse(device_id=payload.device_id)
+        return {"ok": True, "data": data.model_dump()}
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
 
 
 @router.get("/runtime/config", response_model=dict)
@@ -189,9 +272,15 @@ def list_indexed_tracks(source_ids: str | None = None, limit: int = 500, db: Ses
                 if source.provider_key in {"local_folder", "local_files"}
                 else f"https://www.youtube.com/embed/{track.file_path}?autoplay=1"
                 if source.provider_key == "youtube_playlist"
+                else f"https://open.spotify.com/track/{track.file_path}"
+                if source.provider_key == "spotify_playlist"
                 else ""
             ),
-            duration_seconds=(youtube_durations.get(track.file_path) if source.provider_key == "youtube_playlist" else None),
+            duration_seconds=(
+                youtube_durations.get(track.file_path)
+                if source.provider_key == "youtube_playlist"
+                else (track.file_size // 1000 if source.provider_key == "spotify_playlist" and track.file_size > 0 else None)
+            ),
         )
         for track, source in rows
     ]

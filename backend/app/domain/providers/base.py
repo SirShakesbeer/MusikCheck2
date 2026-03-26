@@ -9,6 +9,7 @@ class MediaItem:
     artist: str
     media_path: str | None = None
     lyrics: str | None = None
+    duration_seconds: int | None = None
 
 
 class MediaProvider(ABC):
