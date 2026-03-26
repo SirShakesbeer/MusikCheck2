@@ -12,7 +12,7 @@ class Settings(BaseSettings):
     api_prefix: str = "/api"
     database_url: str = "sqlite:///./dev.db"
     media_root: str = "media"
-    test_mode: bool = True
+    test_mode: bool = False
     youtube_api_key: str | None = None
     youtube_default_playlist: str | None = None
     spotify_client_id: str | None = None

@@ -29,15 +29,31 @@ class MediaProcessingService:
         if cache_key in self._cache:
             return self._cache[cache_key]
 
-        snippet_url = SILENT_WAV_DATA_URI
-        if not settings.test_mode and media_item.media_path:
-            youtube_embed = self._youtube_embed_url(media_item.media_path, cache_key, spec.random_start)
-            if youtube_embed:
-                snippet_url = youtube_embed
+        if settings.test_mode:
+            snippet_url = SILENT_WAV_DATA_URI
+        else:
+            snippet_url = self._resolve_real_snippet_url(media_item, cache_key, spec.random_start)
+            if not snippet_url:
+                raise ValueError(
+                    "Unable to build a real snippet URL for this media item while TEST_MODE is disabled."
+                )
 
         snippet = ProcessedSnippet(cache_key=cache_key, snippet_url=snippet_url)
         self._cache[cache_key] = snippet
         return snippet
+
+    def _resolve_real_snippet_url(self, media_item: MediaItem, cache_key: str, random_start: bool) -> str | None:
+        if not media_item.media_path:
+            return None
+
+        if media_item.media_path.startswith("/api/media/tracks/"):
+            return media_item.media_path
+
+        youtube_embed = self._youtube_embed_url(media_item.media_path, cache_key, random_start)
+        if youtube_embed:
+            return youtube_embed
+
+        return None
 
     def _youtube_embed_url(self, media_path: str, cache_key: str, random_start: bool) -> str | None:
         parsed = urlparse(media_path)

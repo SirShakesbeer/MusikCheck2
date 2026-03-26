@@ -6,6 +6,8 @@ from app.core.config import settings
 from app.core.database import get_db
 from app.core.ws_manager import ws_manager
 from app.schemas.media import (
+    CleanupSourcesRequest,
+    CleanupSourcesResponse,
     IndexedTrackState,
     IngestSourceRequest,
     IngestSourceResponse,
@@ -319,6 +321,13 @@ def run_source_sync(source_id: str, db: Session = Depends(get_db)):
         return {"ok": True, "data": data.model_dump()}
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
+
+
+@router.post("/media/sources/cleanup", response_model=dict)
+def cleanup_sources(payload: CleanupSourcesRequest, db: Session = Depends(get_db)):
+    removed_source_ids = media_library_service.cleanup_sources(db, payload.source_ids)
+    data = CleanupSourcesResponse(removed_source_ids=removed_source_ids)
+    return {"ok": True, "data": data.model_dump()}
 
 
 @router.get("/media/sources", response_model=dict)

@@ -55,6 +55,14 @@ class RunSourceSyncResponse(BaseModel):
     total_tracks: int
 
 
+class CleanupSourcesRequest(BaseModel):
+    source_ids: list[str] = Field(default_factory=list)
+
+
+class CleanupSourcesResponse(BaseModel):
+    removed_source_ids: list[str]
+
+
 class IndexedTrackState(BaseModel):
     id: str
     source_id: str

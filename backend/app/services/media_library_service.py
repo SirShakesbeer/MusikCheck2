@@ -35,6 +35,22 @@ class MediaLibraryService:
     def get_source(self, db: Session, source_id: str) -> MediaSource | None:
         return db.query(MediaSource).filter(MediaSource.id == source_id).first()
 
+    def delete_source(self, db: Session, source_id: str) -> bool:
+        source = db.query(MediaSource).filter(MediaSource.id == source_id).first()
+        if not source:
+            return False
+
+        db.delete(source)
+        db.commit()
+        return True
+
+    def cleanup_sources(self, db: Session, source_ids: list[str]) -> list[str]:
+        removed_source_ids: list[str] = []
+        for source_id in source_ids:
+            if self.delete_source(db, source_id):
+                removed_source_ids.append(source_id)
+        return removed_source_ids
+
     def index_local_source(self, db: Session, source_id: str) -> int:
         source = db.query(MediaSource).filter(MediaSource.id == source_id).first()
         if not source:

@@ -121,27 +121,41 @@ class GameEngine:
                 media_path="placeholder",
             )
 
-        indexed_tracks = db.query(IndexedTrack).all()
-        if indexed_tracks:
-            indexed_track = random.choice(indexed_tracks)
-            source = db.query(MediaSource).filter(MediaSource.id == indexed_track.source_id).first()
-            media_path = indexed_track.file_path
-            if source and source.provider_key == "youtube_playlist":
+        indexed_rows = (
+            db.query(IndexedTrack, MediaSource)
+            .join(MediaSource, IndexedTrack.source_id == MediaSource.id)
+            .all()
+        )
+        playable_items: list[MediaItem] = []
+        for indexed_track, source in indexed_rows:
+            media_path: str | None = None
+            if source.provider_key == "youtube_playlist":
                 media_path = f"https://www.youtube.com/watch?v={indexed_track.file_path}"
+            elif source.provider_key in {"local_folder", "local_files"}:
+                media_path = f"/api/media/tracks/{indexed_track.id}/stream"
+            else:
+                continue
 
-            return MediaItem(
-                source_id=indexed_track.id,
-                title=indexed_track.title,
-                artist=indexed_track.artist,
-                media_path=media_path,
+            playable_items.append(
+                MediaItem(
+                    source_id=indexed_track.id,
+                    title=indexed_track.title,
+                    artist=indexed_track.artist,
+                    media_path=media_path,
+                )
             )
+
+        if playable_items:
+            return random.choice(playable_items)
 
         if settings.youtube_default_playlist:
             items = self.media_ingestion.import_from_source("youtube_playlist", settings.youtube_default_playlist)
             if items:
                 return random.choice(items)
 
-        raise ValueError("No media available. Add/index a source or enable TEST_MODE.")
+        raise ValueError(
+            "No playable media available. Add/index a local or YouTube source, or enable TEST_MODE."
+        )
 
     def stop_round(self, db: Session, lobby_code: str, team_id: str) -> None:
         self._find_lobby(db, lobby_code)

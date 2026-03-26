@@ -85,7 +85,7 @@ export function HostPage() {
   const [newSourceValue, setNewSourceValue] = useState('');
   const [pendingLocalFileCount, setPendingLocalFileCount] = useState<number>(0);
   const [localTeams, setLocalTeams] = useState<LocalTeam[]>([]);
-  const [localSongs, setLocalSongs] = useState<LocalSong[]>(MOCK_LOCAL_SONGS);
+  const [localSongs, setLocalSongs] = useState<LocalSong[]>([]);
   const [localStarted, setLocalStarted] = useState(false);
   const [snippetStartOffsets, setSnippetStartOffsets] = useState<number[]>([0, 0, 0]);
   const [localSongIndex, setLocalSongIndex] = useState<number | null>(null);
@@ -109,7 +109,7 @@ export function HostPage() {
   const [newPresetName, setNewPresetName] = useState<string>('');
   const [state, setState] = useState<GameState | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [runtimeTestMode, setRuntimeTestMode] = useState<boolean>(true);
+  const [runtimeTestMode, setRuntimeTestMode] = useState<boolean>(false);
   const [youtubeApiConfigured, setYoutubeApiConfigured] = useState<boolean>(false);
   const [runtimeConfigBusy, setRuntimeConfigBusy] = useState<boolean>(false);
   const [playerPopup, setPlayerPopup] = useState<Window | null>(null);
@@ -329,8 +329,12 @@ export function HostPage() {
       if (runtimeTestMode) {
         setLocalSongs(MOCK_LOCAL_SONGS);
       } else {
+        if (localSources.length < 1) {
+          throw new Error('Please add at least one source before starting in non-test mode.');
+        }
+
         const sourceIds = localSources.map((source) => source.backendSourceId).filter(Boolean) as string[];
-        const result = await api.getIndexedTracks(sourceIds.length > 0 ? sourceIds : undefined);
+        const result = await api.getIndexedTracks(sourceIds);
         const dynamicSongs: LocalSong[] = result.data.tracks.map((track) => ({
           title: track.title,
           artist: track.artist,
@@ -434,8 +438,28 @@ export function HostPage() {
     setLocalSources((previous) => previous.map((source) => (source.id === sourceId ? { ...source, ...patch } : source)));
   };
 
-  const removeLocalSource = (sourceId: string) => {
-    setLocalSources((previous) => previous.filter((source) => source.id !== sourceId));
+  const cleanupBackendSources = async (sourceIds: string[]) => {
+    if (sourceIds.length < 1) {
+      return;
+    }
+
+    await api.cleanupSources(sourceIds);
+  };
+
+  const removeLocalSource = async (sourceId: string) => {
+    const source = localSources.find((item) => item.id === sourceId);
+    setLocalSources((previous) => previous.filter((item) => item.id !== sourceId));
+
+    if (!source?.backendSourceId) {
+      return;
+    }
+
+    try {
+      await cleanupBackendSources([source.backendSourceId]);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
   };
 
   const onFolderFilesSelected = (event: ChangeEvent<HTMLInputElement>) => {
@@ -680,10 +704,19 @@ export function HostPage() {
   };
 
   const resetToMenu = () => {
+    const sourceIdsToCleanup = localSources
+      .map((source) => source.backendSourceId)
+      .filter(Boolean) as string[];
+    void cleanupBackendSources(sourceIdsToCleanup).catch((err) => {
+      setError(err instanceof Error ? err.message : String(err));
+    });
+
     setSetupStep('mode-cards');
     setModeDetailsEditable(false);
     setModeDetailsTitle('');
     setState(null);
+    setLocalSources([]);
+    setLocalSongs([]);
     setLocalTeams([]);
     setLocalStarted(false);
     setLocalSongIndex(null);

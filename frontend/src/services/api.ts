@@ -14,6 +14,7 @@ import type {
   SpotifyPlayRandomEnvelope,
   SpotifyStatusEnvelope,
   RunLocalIndexEnvelope,
+  CleanupSourcesEnvelope,
   RunSourceSyncEnvelope,
 } from '../types';
 
@@ -122,6 +123,10 @@ export const api = {
     post<RunLocalIndexEnvelope, Record<string, never>>(`/media/sources/${sourceId}/index`, {}),
   runSourceSync: (sourceId: string) =>
     post<RunSourceSyncEnvelope, Record<string, never>>(`/media/sources/${sourceId}/sync`, {}),
+  cleanupSources: (sourceIds: string[]) =>
+    post<CleanupSourcesEnvelope, { source_ids: string[] }>('/media/sources/cleanup', {
+      source_ids: sourceIds,
+    }),
   joinLobby: (code: string, playerName: string, teamName: string) =>
     post<ApiEnvelope, { player_name: string; team_name: string }>(`/lobbies/${code}/join`, {
       player_name: playerName,

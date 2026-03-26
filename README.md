@@ -182,8 +182,7 @@ npm run dev
 
 ### gameplay
 
-- Replace placeholder snippet generation with ffmpeg audio/video/frames extraction
-- Add additional mode plugins (`music_video`, `lyrics`, `instrumental`)
+- Add additional mode plugins (`music_video`, `lyrics`, `instrumental`) (ffmpeg audio/video/frames extraction)
 - Persist rounds/songs/history tables
 - persist game status on reload (use states)
 - Add authentication and host permissions
@@ -191,7 +190,8 @@ npm run dev
 - make gamemode modular and create presets (which modes are included + frequency)
 - add a local database ingestion tool that can be connected in the ui
 - create persistance of user info (settings, user created gamemodes, highscores, connected local databases)
-- add point system
+- fix point system
+- add 
 
 ### UI
 

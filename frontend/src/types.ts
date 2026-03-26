@@ -135,6 +135,13 @@ export type RunSourceSyncEnvelope = {
   };
 };
 
+export type CleanupSourcesEnvelope = {
+  ok: boolean;
+  data: {
+    removed_source_ids: string[];
+  };
+};
+
 export type RuntimeConfigData = {
   test_mode: boolean;
   youtube_api_key_configured: boolean;
