@@ -1,18 +1,13 @@
-import { ChangeEvent, useEffect, useMemo, useRef, useState } from 'react';
+import { ChangeEvent, useEffect, useRef, useState } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
 
+import { RoundPanel } from '../components/RoundPanel';
 import { Scoreboard } from '../components/Scoreboard';
 import { api } from '../services/api';
-import { HtmlAudioSnippetPlayer } from '../services/snippetPlayer';
 import { connectLobbySocket } from '../services/ws';
-import type { GameModeConfig, GameModePresetState, GameState, RoundState } from '../types';
+import type { GameModeConfig, GameModePresetState, GameState } from '../types';
 
 type SetupStep = 'mode-cards' | 'mode-details' | 'game-setup';
-
-type LocalTeam = {
-  id: string;
-  name: string;
-  score: number;
-};
 
 type SourceType = 'youtube-playlist' | 'spotify-playlist' | 'local-folder';
 
@@ -25,52 +20,11 @@ type LocalSource = {
   ingestError?: string;
 };
 
-type LocalSong = {
-  title: string;
-  artist: string;
-  sourceType: 'local' | 'youtube' | 'spotify';
-  sourceValue: string;
-  snippetUrl: string;
-  durationSeconds?: number;
-  spotifyTrackId?: string;
-};
-
-type TeamRoundGuessState = {
-  artistPoints: number;
-  titlePoints: number;
-  bonusPoints: number;
-};
-
 const LOCAL_STAGE_DURATIONS_DEFAULT = [2, 5, 8];
 const LOCAL_STAGE_POINTS = [3, 2, 1];
-const PLACEHOLDER_SNIPPET_URL =
-  'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=';
 const LOCAL_BOTH_BONUS_POINTS = 1;
 const LOCAL_WRONG_GUESS_PENALTY = 1;
 const LOCAL_REQUIRED_POINTS_TO_WIN = 15;
-const MOCK_LOCAL_SONGS: LocalSong[] = [
-  {
-    title: 'Never Gonna Give You Up',
-    artist: 'Rick Astley',
-    sourceType: 'local',
-    sourceValue: 'C:/Music/Party/NeverGonnaGiveYouUp.mp3',
-    snippetUrl: PLACEHOLDER_SNIPPET_URL,
-  },
-  {
-    title: 'Blinding Lights',
-    artist: 'The Weeknd',
-    sourceType: 'youtube',
-    sourceValue: 'YouTube',
-    snippetUrl: PLACEHOLDER_SNIPPET_URL,
-  },
-  {
-    title: 'Take On Me',
-    artist: 'a-ha',
-    sourceType: 'spotify',
-    sourceValue: 'Spotify',
-    snippetUrl: PLACEHOLDER_SNIPPET_URL,
-  },
-];
 
 const SOURCE_TYPE_OPTIONS: { value: SourceType; label: string }[] = [
   { value: 'youtube-playlist', label: 'YouTube Playlist Link' },
@@ -79,9 +33,11 @@ const SOURCE_TYPE_OPTIONS: { value: SourceType; label: string }[] = [
 ];
 
 const ROUND_TYPES_REQUIRING_PHONES = new Set(['lyrics']);
+const HOST_SESSION_STORAGE_KEY = 'musikcheck2.host-session-v1';
 
 export function HostPage() {
-  const snippetPlayer = useMemo(() => new HtmlAudioSnippetPlayer(), []);
+  const navigate = useNavigate();
+  const { code: routeLobbyCode } = useParams();
   const folderInputRef = useRef<HTMLInputElement | null>(null);
 
   const [setupStep, setSetupStep] = useState<SetupStep>('mode-cards');
@@ -92,16 +48,6 @@ export function HostPage() {
   const [newSourceType, setNewSourceType] = useState<SourceType>('local-folder');
   const [newSourceValue, setNewSourceValue] = useState('');
   const [pendingLocalFileCount, setPendingLocalFileCount] = useState<number>(0);
-  const [localTeams, setLocalTeams] = useState<LocalTeam[]>([]);
-  const [localSongs, setLocalSongs] = useState<LocalSong[]>([]);
-  const [localStarted, setLocalStarted] = useState(false);
-  const [snippetStartOffsets, setSnippetStartOffsets] = useState<number[]>([0, 0, 0]);
-  const [localSongIndex, setLocalSongIndex] = useState<number | null>(null);
-  const [localRevealed, setLocalRevealed] = useState(false);
-  const [lastPlayedStageIndex, setLastPlayedStageIndex] = useState<number>(0);
-  const [highestPlayedStageIndex, setHighestPlayedStageIndex] = useState<number>(0);
-  const [teamRoundGuessState, setTeamRoundGuessState] = useState<Record<string, TeamRoundGuessState>>({});
-  const [localMessage, setLocalMessage] = useState<string | null>(null);
 
   const [hostName, setHostName] = useState('Host');
   const [gameModes, setGameModes] = useState<GameModePresetState[]>([]);
@@ -131,27 +77,12 @@ export function HostPage() {
   const [runtimeTestMode, setRuntimeTestMode] = useState<boolean>(false);
   const [youtubeApiConfigured, setYoutubeApiConfigured] = useState<boolean>(false);
   const [runtimeConfigBusy, setRuntimeConfigBusy] = useState<boolean>(false);
-  const [playerPopup, setPlayerPopup] = useState<Window | null>(null);
   const [spotifyConnected, setSpotifyConnected] = useState<boolean>(false);
   const [spotifyAuthBusy, setSpotifyAuthBusy] = useState<boolean>(false);
-  const [spotifyDeviceId, setSpotifyDeviceId] = useState<string | null>(null);
-  const spotifyDeviceIdRef = useRef<string | null>(null);
-  const spotifyPlayerRef = useRef<any>(null);
-  const spotifyPlaybackTimer = useRef<number | null>(null);
-
-  const stopAllPlayback = () => {
-    // Stop HTML audio/YouTube playback
-    snippetPlayer.stop();
-    
-    // Stop Spotify playback
-    if (spotifyPlaybackTimer.current !== null) {
-      window.clearTimeout(spotifyPlaybackTimer.current);
-      spotifyPlaybackTimer.current = null;
-    }
-    if (spotifyPlayerRef.current) {
-      void spotifyPlayerRef.current.pause();
-    }
-  };
+  const restoredSessionRef = useRef<boolean>(false);
+  const sessionHydratedRef = useRef<boolean>(false);
+  const hostRuntimeSyncTimerRef = useRef<number | null>(null);
+  const lastHostRuntimeHashRef = useRef<string>('');
 
   const providerKeyByType: Record<SourceType, string> = {
     'youtube-playlist': 'youtube_playlist',
@@ -159,11 +90,175 @@ export function HostPage() {
     'local-folder': 'local_files',
   };
 
-  const apiBase = import.meta.env.VITE_API_BASE ?? 'http://localhost:8000/api';
 
-  const localCurrentSong = localSongIndex === null ? null : localSongs[localSongIndex % localSongs.length];
-  const localCurrentSource =
-    localSongIndex === null || localSources.length === 0 ? null : localSources[localSongIndex % localSources.length];
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(HOST_SESSION_STORAGE_KEY);
+      if (!raw) {
+        sessionHydratedRef.current = true;
+        return;
+      }
+
+      const session = JSON.parse(raw) as Record<string, unknown>;
+      restoredSessionRef.current = true;
+
+      if (typeof session.setupStep === 'string') {
+        setSetupStep(session.setupStep as SetupStep);
+      }
+      if (typeof session.modeDetailsEditable === 'boolean') {
+        setModeDetailsEditable(session.modeDetailsEditable);
+      }
+      if (typeof session.modeDetailsTitle === 'string') {
+        setModeDetailsTitle(session.modeDetailsTitle);
+      }
+      if (typeof session.setupTeams === 'string') {
+        setSetupTeams(session.setupTeams);
+      }
+      if (Array.isArray(session.localSources)) {
+        setLocalSources(session.localSources as LocalSource[]);
+      }
+      if (!Array.isArray(session.localSources) && session.compactCurrentSource && typeof session.compactCurrentSource === 'object') {
+        setLocalSources([session.compactCurrentSource as LocalSource]);
+      }
+      if (typeof session.hostName === 'string') {
+        setHostName(session.hostName);
+      }
+      if (typeof session.selectedPresetKey === 'string') {
+        setSelectedPresetKey(session.selectedPresetKey);
+      }
+      if (typeof session.audioEverySongs === 'string') {
+        setAudioEverySongs(session.audioEverySongs);
+      }
+      if (typeof session.videoEverySongs === 'string') {
+        setVideoEverySongs(session.videoEverySongs);
+      }
+      if (typeof session.lyricsEverySongs === 'string') {
+        setLyricsEverySongs(session.lyricsEverySongs);
+      }
+      if (typeof session.audioEnabled === 'boolean') {
+        setAudioEnabled(session.audioEnabled);
+      }
+      if (typeof session.videoEnabled === 'boolean') {
+        setVideoEnabled(session.videoEnabled);
+      }
+      if (typeof session.lyricsEnabled === 'boolean') {
+        setLyricsEnabled(session.lyricsEnabled);
+      }
+      if (typeof session.releaseYearFrom === 'string') {
+        setReleaseYearFrom(session.releaseYearFrom);
+      }
+      if (typeof session.releaseYearTo === 'string') {
+        setReleaseYearTo(session.releaseYearTo);
+      }
+      if (typeof session.language === 'string') {
+        setLanguage(session.language);
+      }
+      if (typeof session.snippet1Duration === 'string') {
+        setSnippet1Duration(session.snippet1Duration);
+      }
+      if (typeof session.snippet2Duration === 'string') {
+        setSnippet2Duration(session.snippet2Duration);
+      }
+      if (typeof session.snippet3Duration === 'string') {
+        setSnippet3Duration(session.snippet3Duration);
+      }
+      if (typeof session.snippet1Points === 'string') {
+        setSnippet1Points(session.snippet1Points);
+      }
+      if (typeof session.snippet2Points === 'string') {
+        setSnippet2Points(session.snippet2Points);
+      }
+      if (typeof session.snippet3Points === 'string') {
+        setSnippet3Points(session.snippet3Points);
+      }
+      if (typeof session.bothBonusPoints === 'string') {
+        setBothBonusPoints(session.bothBonusPoints);
+      }
+      if (typeof session.wrongGuessPenalty === 'string') {
+        setWrongGuessPenalty(session.wrongGuessPenalty);
+      }
+      if (typeof session.requiredPointsToWin === 'string') {
+        setRequiredPointsToWin(session.requiredPointsToWin);
+      }
+      if (session.state && typeof session.state === 'object') {
+        const restoredState = session.state as GameState;
+        setState(restoredState);
+        if (restoredState.lobby_code && !routeLobbyCode) {
+          navigate(`/host/${restoredState.lobby_code}`, { replace: true });
+        }
+      }
+    } catch {
+      window.localStorage.removeItem(HOST_SESSION_STORAGE_KEY);
+    } finally {
+      sessionHydratedRef.current = true;
+    }
+  }, [navigate, routeLobbyCode]);
+
+  useEffect(() => {
+    if (!sessionHydratedRef.current) {
+      return;
+    }
+
+    const snapshot = {
+      setupStep,
+      modeDetailsEditable,
+      modeDetailsTitle,
+      setupTeams,
+      localSources,
+      hostName,
+      selectedPresetKey,
+      audioEverySongs,
+      videoEverySongs,
+      lyricsEverySongs,
+      audioEnabled,
+      videoEnabled,
+      lyricsEnabled,
+      releaseYearFrom,
+      releaseYearTo,
+      language,
+      snippet1Duration,
+      snippet2Duration,
+      snippet3Duration,
+      snippet1Points,
+      snippet2Points,
+      snippet3Points,
+      bothBonusPoints,
+      wrongGuessPenalty,
+      requiredPointsToWin,
+      state,
+    };
+    try {
+      window.localStorage.setItem(HOST_SESSION_STORAGE_KEY, JSON.stringify(snapshot));
+    } catch {
+    }
+  }, [
+    setupStep,
+    modeDetailsEditable,
+    modeDetailsTitle,
+    setupTeams,
+    localSources,
+    hostName,
+    selectedPresetKey,
+    audioEverySongs,
+    videoEverySongs,
+    lyricsEverySongs,
+    audioEnabled,
+    videoEnabled,
+    lyricsEnabled,
+    releaseYearFrom,
+    releaseYearTo,
+    language,
+    snippet1Duration,
+    snippet2Duration,
+    snippet3Duration,
+    snippet1Points,
+    snippet2Points,
+    snippet3Points,
+    bothBonusPoints,
+    wrongGuessPenalty,
+    requiredPointsToWin,
+    state,
+  ]);
 
   const applyPresetToForm = (preset: GameModePresetState) => {
     const audioRule = preset.round_rules.find((rule) => rule.kind === 'audio');
@@ -291,9 +386,9 @@ export function HostPage() {
     setError(null);
   };
 
-  const ensurePhoneLobby = async () => {
+  const ensurePhoneLobby = async (): Promise<string> => {
     if (state?.lobby_code) {
-      return;
+      return state.lobby_code;
     }
 
     const modeConfig = buildModeConfig();
@@ -305,6 +400,8 @@ export function HostPage() {
       preset_name: modeDetailsTitle || undefined,
     });
     setState(result.data);
+    navigate(`/host/${result.data.lobby_code}`, { replace: true });
+    return result.data.lobby_code;
   };
 
   const continueToGameSetup = async () => {
@@ -313,6 +410,9 @@ export function HostPage() {
       await ensurePhoneLobby();
       setError(null);
     } catch (err) {
+      if (err instanceof Error && err.message.toLowerCase().includes('spotify')) {
+        setSpotifyConnected(false);
+      }
       setError(err instanceof Error ? err.message : String(err));
     }
   };
@@ -321,6 +421,132 @@ export function HostPage() {
     if (!state?.lobby_code) return;
     return connectLobbySocket(state.lobby_code, setState);
   }, [state?.lobby_code]);
+
+  useEffect(() => {
+    if (!routeLobbyCode) return;
+
+    let cancelled = false;
+    const hydrateLobby = async () => {
+      try {
+        const result = await api.getLobbyState(routeLobbyCode);
+        if (cancelled) {
+          return;
+        }
+        const hydratedState = result.data;
+        setState(hydratedState);
+        setSetupStep('game-setup');
+        setSelectedPresetKey(hydratedState.mode.key);
+        setModeDetailsTitle(hydratedState.mode.name);
+        applyPresetToForm(hydratedState.mode);
+
+        // Sync scoring/config from backend so reload lands on the same game context.
+        setSnippet1Duration(String(hydratedState.mode.stage_durations[0] ?? LOCAL_STAGE_DURATIONS_DEFAULT[0]));
+        setSnippet2Duration(String(hydratedState.mode.stage_durations[1] ?? LOCAL_STAGE_DURATIONS_DEFAULT[1]));
+        setSnippet3Duration(String(hydratedState.mode.stage_durations[2] ?? LOCAL_STAGE_DURATIONS_DEFAULT[2]));
+        setSnippet1Points(String(hydratedState.mode.stage_points[0] ?? LOCAL_STAGE_POINTS[0]));
+        setSnippet2Points(String(hydratedState.mode.stage_points[1] ?? LOCAL_STAGE_POINTS[1]));
+        setSnippet3Points(String(hydratedState.mode.stage_points[2] ?? LOCAL_STAGE_POINTS[2]));
+        setRequiredPointsToWin(String(hydratedState.mode.required_points_to_win ?? LOCAL_REQUIRED_POINTS_TO_WIN));
+
+        let restoredFromBackendHostRuntime = false;
+        const backendHostRuntime = hydratedState.host_runtime_state;
+        if (backendHostRuntime && typeof backendHostRuntime === 'object') {
+          const runtime = backendHostRuntime as Record<string, unknown>;
+          restoredFromBackendHostRuntime = true;
+
+          if (typeof runtime.setupStep === 'string') {
+            setSetupStep(runtime.setupStep as SetupStep);
+          }
+          if (Array.isArray(runtime.localSources)) {
+            setLocalSources(runtime.localSources as LocalSource[]);
+          }
+        }
+        setError(null);
+      } catch (err) {
+        if (!cancelled) {
+          const message = err instanceof Error ? err.message : String(err);
+          const normalized = message.toLowerCase();
+          if (normalized.includes('lobby not found') || normalized.includes('unknown game mode preset')) {
+            setState(null);
+            setSetupStep('mode-cards');
+            window.localStorage.removeItem(HOST_SESSION_STORAGE_KEY);
+            navigate('/host', { replace: true });
+          }
+          setError(message);
+        }
+      }
+    };
+
+    void hydrateLobby();
+    return () => {
+      cancelled = true;
+    };
+  }, [navigate, routeLobbyCode]);
+
+  useEffect(() => {
+    if (!sessionHydratedRef.current) {
+      return;
+    }
+    if (!state?.lobby_code) {
+      return;
+    }
+
+    const compactHostRuntimeSnapshot: Record<string, unknown> = {
+      setupStep,
+      modeDetailsTitle,
+      selectedPresetKey,
+      hostName,
+      localSources,
+      requiredPointsToWin,
+      snippet1Points,
+      snippet2Points,
+      snippet3Points,
+      bothBonusPoints,
+      wrongGuessPenalty,
+    };
+
+    const snapshotHash = JSON.stringify(compactHostRuntimeSnapshot);
+    if (lastHostRuntimeHashRef.current === snapshotHash) {
+      return;
+    }
+
+    if (hostRuntimeSyncTimerRef.current !== null) {
+      window.clearTimeout(hostRuntimeSyncTimerRef.current);
+      hostRuntimeSyncTimerRef.current = null;
+    }
+
+    hostRuntimeSyncTimerRef.current = window.setTimeout(() => {
+      const code = state.lobby_code;
+      void api
+        .saveHostRuntimeState(code, compactHostRuntimeSnapshot)
+        .then(() => {
+          lastHostRuntimeHashRef.current = snapshotHash;
+        })
+        .catch(() => {
+        });
+      hostRuntimeSyncTimerRef.current = null;
+    }, 450);
+
+    return () => {
+      if (hostRuntimeSyncTimerRef.current !== null) {
+        window.clearTimeout(hostRuntimeSyncTimerRef.current);
+        hostRuntimeSyncTimerRef.current = null;
+      }
+    };
+  }, [
+    state?.lobby_code,
+    setupStep,
+    modeDetailsTitle,
+    selectedPresetKey,
+    hostName,
+    localSources,
+    requiredPointsToWin,
+    snippet1Points,
+    snippet2Points,
+    snippet3Points,
+    bothBonusPoints,
+    wrongGuessPenalty,
+  ]);
 
   useEffect(() => {
     const loadRuntimeConfig = async () => {
@@ -332,7 +558,7 @@ export function HostPage() {
         setSpotifyConnected(Boolean(spotify.data.connected));
         const modes = await api.getGameModes();
         setGameModes(modes.data);
-        if (modes.data.length > 0) {
+        if (modes.data.length > 0 && !restoredSessionRef.current) {
           const defaultPreset = modes.data.find((preset) => preset.key === 'classic_audio') ?? modes.data[0];
           setSelectedPresetKey(defaultPreset.key);
           applyPresetToForm(defaultPreset);
@@ -344,6 +570,26 @@ export function HostPage() {
 
     void loadRuntimeConfig();
   }, []);
+
+  useEffect(() => {
+    if (gameModes.length < 1) {
+      return;
+    }
+
+    // Do not override an active lobby's mode (custom modes may not exist in preset list).
+    if (state?.lobby_code) {
+      return;
+    }
+
+    const keyExists = gameModes.some((preset) => preset.key === selectedPresetKey);
+    if (keyExists) {
+      return;
+    }
+
+    const fallbackPreset = gameModes.find((preset) => preset.key === 'classic_audio') ?? gameModes[0];
+    setSelectedPresetKey(fallbackPreset.key);
+    applyPresetToForm(fallbackPreset);
+  }, [gameModes, selectedPresetKey, state?.lobby_code]);
 
   const saveCurrentPreset = async () => {
     const name = newPresetName.trim();
@@ -365,6 +611,9 @@ export function HostPage() {
       setSaveAsPreset(false);
       setError(null);
     } catch (err) {
+      if (err instanceof Error && err.message.toLowerCase().includes('spotify')) {
+        setSpotifyConnected(false);
+      }
       setError(err instanceof Error ? err.message : String(err));
     }
   };
@@ -385,46 +634,14 @@ export function HostPage() {
     }
 
     const begin = async () => {
-      if (runtimeTestMode) {
-        setLocalSongs(MOCK_LOCAL_SONGS);
-      } else {
-        if (localSources.length < 1) {
-          throw new Error('Please add at least one source before starting in non-test mode.');
-        }
+      const lobbyCode = await ensurePhoneLobby();
+      const teamsState = await api.setLobbyTeams(lobbyCode, names);
+      setState(teamsState.data);
 
-        const sourceIds = localSources.map((source) => source.backendSourceId).filter(Boolean) as string[];
-        const result = await api.getIndexedTracks(sourceIds);
-        const dynamicSongs: LocalSong[] = result.data.tracks.map((track) => ({
-          title: track.title,
-          artist: track.artist,
-          sourceType:
-            track.provider_key === 'youtube_playlist'
-              ? 'youtube'
-              : track.provider_key === 'spotify_playlist'
-                ? 'spotify'
-                : 'local',
-          sourceValue: track.source_value,
-          snippetUrl: track.playback_url.startsWith('http') ? track.playback_url : `${apiBase}${track.playback_url}`,
-          durationSeconds: typeof track.duration_seconds === 'number' ? track.duration_seconds : undefined,
-          spotifyTrackId: track.provider_key === 'spotify_playlist' ? track.file_path : undefined,
-        }));
+      const roundState = await api.startRound(lobbyCode);
+      setState(roundState.data);
 
-        if (dynamicSongs.length < 1) {
-          throw new Error('No indexed tracks found. Add a source and sync/index before starting.');
-        }
-
-        setLocalSongs(dynamicSongs);
-      }
-
-      setLocalTeams(names.map((name, index) => ({ id: `local-${index + 1}`, name, score: 0 })));
-      setLocalStarted(true);
-      setLocalSongIndex(null);
-      setLocalRevealed(false);
-      setLastPlayedStageIndex(0);
-      setHighestPlayedStageIndex(0);
-      setTeamRoundGuessState({});
       setError(null);
-      setLocalMessage('Local game started. Click Next Song to begin a round.');
     };
 
     void begin().catch((err) => {
@@ -556,311 +773,6 @@ export function HostPage() {
     folderInputRef.current?.click();
   };
 
-  const updateLocalScore = (teamId: string, delta: number, reason: string) => {
-    let updatedTeamName: string | null = null;
-    let updatedScore = 0;
-    let winnerName: string | null = null;
-    const winTarget = Number.parseInt(requiredPointsToWin, 10);
-
-    setLocalTeams((previous) =>
-      previous.map((team) => {
-        if (team.id !== teamId) {
-          return team;
-        }
-
-        const nextScore = Math.max(0, team.score + delta);
-        updatedTeamName = team.name;
-        updatedScore = nextScore;
-        if (Number.isFinite(winTarget) && winTarget > 0 && nextScore >= winTarget && team.score < winTarget) {
-          winnerName = team.name;
-        }
-        return { ...team, score: nextScore };
-      }),
-    );
-
-    if (updatedTeamName) {
-      const direction = delta >= 0 ? '+' : '';
-      const winMessage = winnerName ? ` ${winnerName} reached ${winTarget} points and wins!` : '';
-      setLocalMessage(`${updatedTeamName}: ${reason} (${direction}${delta}) → ${updatedScore} pts.${winMessage}`);
-    }
-  };
-
-  const getActiveSnippetPoints = (): number => {
-    const points = [snippet1Points, snippet2Points, snippet3Points].map((value) => Number.parseInt(value, 10));
-    const index = Math.max(0, Math.min(points.length - 1, highestPlayedStageIndex));
-    const selected = points[index];
-    return Number.isFinite(selected) ? selected : LOCAL_STAGE_POINTS[index];
-  };
-
-  const toggleTeamFact = (teamId: string, fact: 'artist' | 'title') => {
-    if (!localCurrentSong) {
-      setLocalMessage('No active song. Click Next Song first.');
-      return;
-    }
-
-    const factPoints = getActiveSnippetPoints();
-    const bothBonus = Math.max(0, Number.parseInt(bothBonusPoints, 10) || 0);
-
-    setTeamRoundGuessState((previous) => {
-      const current = previous[teamId] ?? { artistPoints: 0, titlePoints: 0, bonusPoints: 0 };
-      const next = { ...current };
-
-      const factKey = fact === 'artist' ? 'artistPoints' : 'titlePoints';
-      const otherFactKey = fact === 'artist' ? 'titlePoints' : 'artistPoints';
-      const wasSelected = current[factKey] > 0;
-
-      let delta = 0;
-      let reason = '';
-
-      if (wasSelected) {
-        delta -= current[factKey];
-        next[factKey] = 0;
-        reason = `${fact === 'artist' ? 'Artist' : 'Title'} deselected`;
-
-        if (current.bonusPoints > 0) {
-          delta -= current.bonusPoints;
-          next.bonusPoints = 0;
-          reason = `${reason} (-both bonus)`;
-        }
-      } else {
-        next[factKey] = factPoints;
-        delta += factPoints;
-        reason = `${fact === 'artist' ? 'Artist' : 'Title'} selected`;
-
-        if (next[otherFactKey] > 0 && current.bonusPoints < 1 && bothBonus > 0) {
-          next.bonusPoints = bothBonus;
-          delta += bothBonus;
-          reason = `${reason} + both bonus`;
-        }
-      }
-
-      if (delta === 0) {
-        return previous;
-      }
-
-      updateLocalScore(teamId, delta, reason);
-      return { ...previous, [teamId]: next };
-    });
-  };
-
-  const applyWrongGuessPenalty = (teamId: string) => {
-    const penalty = Math.max(0, Number.parseInt(wrongGuessPenalty, 10) || 0);
-    if (penalty < 1) {
-      setLocalMessage('Wrong-guess penalty is set to 0.');
-      return;
-    }
-    updateLocalScore(teamId, -penalty, 'Wrong guess');
-  };
-
-  const playLocalSnippet = async (stageIndex: number) => {
-    try {
-      // Stop any currently playing audio
-      stopAllPlayback();
-
-      if (!localCurrentSong) {
-        setLocalMessage('Click Next Song first.');
-        return;
-      }
-
-      const startAtSeconds = snippetStartOffsets[stageIndex] ?? 0;
-      const stageDurations = getConfiguredStageDurations();
-      const snippetDuration = stageDurations[stageIndex] ?? LOCAL_STAGE_DURATIONS_DEFAULT[stageIndex];
-
-      if (localCurrentSong.sourceType === 'spotify') {
-        if (!localCurrentSong.spotifyTrackId) {
-          setError('Spotify track id is missing for this song.');
-          return;
-        }
-        if (!spotifyConnected) {
-          setError('Connect Spotify first to play Spotify snippets.');
-          return;
-        }
-
-        const trackDurationSeconds = Math.max(1, Math.floor(localCurrentSong.durationSeconds ?? 180));
-        const targetDeviceId = await ensureSpotifyBrowserDevice();
-        if (!targetDeviceId) {
-          setError('Spotify browser device not detected. Close any other Spotify tabs/apps, keep this page open, and try again.');
-          return;
-        }
-
-        console.log('[Spotify] Activating device:', targetDeviceId);
-        await api.activateSpotifyDevice(targetDeviceId);
-        
-        try {
-          console.log('[Spotify] Playing track with device:', targetDeviceId);
-          await api.playSpotifyRandom(
-            localCurrentSong.spotifyTrackId,
-            trackDurationSeconds,
-            snippetDuration,
-            targetDeviceId,
-            startAtSeconds,
-          );
-          
-          // Set timer to stop playback after snippet duration
-          spotifyPlaybackTimer.current = window.setTimeout(
-            () => {
-              spotifyPlayerRef.current?.pause();
-              spotifyPlaybackTimer.current = null;
-            },
-            snippetDuration * 1000,
-          );
-        } catch (firstErr) {
-          const message = firstErr instanceof Error ? firstErr.message : String(firstErr);
-          console.error('[Spotify] Play failed:', message);
-          if (!message.toLowerCase().includes('device')) {
-            throw firstErr;
-          }
-
-          console.log('[Spotify] Device unavailable, clearing cache and retrying...');
-          spotifyDeviceIdRef.current = null;
-          setSpotifyDeviceId(null);
-          await new Promise((resolve) => window.setTimeout(resolve, 1500));
-          
-          const retryDeviceId = await ensureSpotifyBrowserDevice();
-          if (!retryDeviceId) {
-            throw new Error('Spotify browser device still not available. Close other Spotify tabs and ensure Premium is active.');
-          }
-          console.log('[Spotify] Retry with device:', retryDeviceId);
-          await api.activateSpotifyDevice(retryDeviceId);
-          await api.playSpotifyRandom(
-            localCurrentSong.spotifyTrackId,
-            trackDurationSeconds,
-            snippetDuration,
-            retryDeviceId,
-            startAtSeconds,
-          );
-          
-          // Set timer to stop playback after snippet duration
-          spotifyPlaybackTimer.current = window.setTimeout(
-            () => {
-              spotifyPlayerRef.current?.pause();
-              spotifyPlaybackTimer.current = null;
-            },
-            snippetDuration * 1000,
-          );
-        }
-        setLastPlayedStageIndex(stageIndex);
-        setHighestPlayedStageIndex((previous) => Math.max(previous, stageIndex));
-        setLocalMessage(
-          `Triggered Spotify snippet ${stageIndex + 1} (${snippetDuration}s) from ${Math.floor(startAtSeconds)}s.`,
-        );
-        return;
-      }
-
-      await snippetPlayer.play({
-        snippetUrl: localCurrentSong.snippetUrl,
-        durationSeconds: snippetDuration,
-        startAtSeconds,
-      });
-
-      setLastPlayedStageIndex(stageIndex);
-      setHighestPlayedStageIndex((previous) => Math.max(previous, stageIndex));
-      setLocalMessage(
-        `Playing snippet ${stageIndex + 1} (${snippetDuration}s) from ${Math.floor(startAtSeconds)}s.`,
-      );
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    }
-  };
-
-  const revealLocalSong = () => {
-    if (!localCurrentSong) {
-      setLocalMessage('No active song to reveal.');
-      return;
-    }
-    setLocalRevealed(true);
-  };
-
-  const nextLocalSong = () => {
-    // Stop any currently playing audio before starting new round
-    stopAllPlayback();
-
-    if (localSongs.length < 1) {
-      setLocalMessage('No songs available. Add and sync sources first.');
-      return;
-    }
-
-    const begin = async () => {
-      const nextIndex = localSongIndex === null ? 0 : (localSongIndex + 1) % localSongs.length;
-      const nextSong = localSongs[nextIndex];
-      const songDuration = await resolveSongDuration(nextSong);
-      const stageDurations = getConfiguredStageDurations();
-      const starts = stageDurations.map((stageDuration) => {
-        const maxStart = Math.max(0, songDuration - stageDuration);
-        if (maxStart <= 0) {
-          return 0;
-        }
-        return Math.floor(Math.random() * (maxStart + 1));
-      });
-
-      setSnippetStartOffsets(starts);
-      setLocalSongIndex(nextIndex);
-      setLocalRevealed(false);
-      setLastPlayedStageIndex(0);
-      setHighestPlayedStageIndex(0);
-      setTeamRoundGuessState({});
-      setLocalMessage('New song round started.');
-    };
-
-    void begin().catch((err) => {
-      setError(err instanceof Error ? err.message : String(err));
-    });
-  };
-
-  const resolveSongDuration = async (song: LocalSong): Promise<number> => {
-    if (song.durationSeconds && song.durationSeconds > 0) {
-      return Math.floor(song.durationSeconds);
-    }
-
-    if (song.sourceType === 'youtube') {
-      return 120;
-    }
-
-    const audio = new Audio();
-    audio.preload = 'metadata';
-    audio.src = song.snippetUrl;
-
-    const duration = await new Promise<number>((resolve) => {
-      const cleanup = () => {
-        audio.onloadedmetadata = null;
-        audio.onerror = null;
-      };
-
-      audio.onloadedmetadata = () => {
-        const value = Number.isFinite(audio.duration) ? audio.duration : 0;
-        cleanup();
-        resolve(Math.max(0, Math.floor(value)));
-      };
-
-      audio.onerror = () => {
-        cleanup();
-        resolve(0);
-      };
-    });
-
-    return duration;
-  };
-
-  const getSourceInfo = (song: LocalSong, source: LocalSource | null) => {
-    if (source) {
-      if (source.type === 'local-folder') {
-        return `Local folder: ${source.value}`;
-      }
-      if (source.type === 'youtube-playlist') {
-        return 'YouTube';
-      }
-      return 'Spotify';
-    }
-
-    if (song.sourceType === 'local') {
-      return `Local file: ${song.sourceValue}`;
-    }
-    if (song.sourceType === 'youtube') {
-      return 'YouTube';
-    }
-    return 'Spotify';
-  };
-
   const resetToMenu = () => {
     const sourceIdsToCleanup = localSources
       .map((source) => source.backendSourceId)
@@ -874,16 +786,15 @@ export function HostPage() {
     setModeDetailsTitle('');
     setState(null);
     setLocalSources([]);
-    setLocalSongs([]);
-    setLocalTeams([]);
-    setLocalStarted(false);
-    setLocalSongIndex(null);
-    setLocalRevealed(false);
-    setLastPlayedStageIndex(0);
-    setHighestPlayedStageIndex(0);
-    setTeamRoundGuessState({});
-    setLocalMessage(null);
     setError(null);
+    restoredSessionRef.current = false;
+    lastHostRuntimeHashRef.current = '';
+    if (hostRuntimeSyncTimerRef.current !== null) {
+      window.clearTimeout(hostRuntimeSyncTimerRef.current);
+      hostRuntimeSyncTimerRef.current = null;
+    }
+    window.localStorage.removeItem(HOST_SESSION_STORAGE_KEY);
+    navigate('/host', { replace: true });
   };
 
   const onToggleRuntimeTestMode = async (enabled: boolean) => {
@@ -924,7 +835,6 @@ export function HostPage() {
           const status = await api.getSpotifyStatus();
           if (status.data.connected) {
             setSpotifyConnected(true);
-            void initializeSpotifyWebPlayer();
             setSpotifyAuthBusy(false);
             window.clearInterval(intervalId);
             if (!popup.closed) {
@@ -940,213 +850,31 @@ export function HostPage() {
     }
   };
 
-  const getYoutubeWatchUrl = (embedUrl: string): string =>
-    embedUrl.replace('/embed/', '/watch?v=').replace('?autoplay=1', '').replace('&autoplay=1', '');
-
-  const openPlayerPopup = () => {
-    if (!localCurrentSong) {
-      return;
+  const refreshSpotifyStatus = async () => {
+    try {
+      const status = await api.getSpotifyStatus();
+      setSpotifyConnected(Boolean(status.data.connected));
+    } catch {
     }
-
-    const popup = window.open('', 'musikcheck-player', 'width=520,height=340,resizable=yes');
-    if (!popup) {
-      setError('Popup was blocked by the browser. Please allow popups for this site.');
-      return;
-    }
-
-    const title = `${localCurrentSong.artist} — ${localCurrentSong.title}`;
-    const body =
-      localCurrentSong.sourceType === 'youtube'
-        ? `<iframe width="100%" height="220" src="${localCurrentSong.snippetUrl.replace('autoplay=1', 'autoplay=0')}" title="Revealed song player" allow="autoplay; encrypted-media" allowfullscreen></iframe>`
-        : localCurrentSong.sourceType === 'spotify'
-          ? `<p><a href="${localCurrentSong.snippetUrl}" target="_blank" rel="noreferrer">Open this track in Spotify</a></p>`
-        : `<audio controls autoplay src="${localCurrentSong.snippetUrl}" style="width:100%"></audio>`;
-    const extra =
-      localCurrentSong.sourceType === 'youtube'
-        ? `<p style="margin-top:8px;"><a href="${getYoutubeWatchUrl(localCurrentSong.snippetUrl)}" target="_blank" rel="noreferrer">Open on YouTube</a></p>`
-        : '';
-
-    popup.document.title = `MusikCheck Player`;
-    popup.document.body.innerHTML = `
-      <main style="font-family: Arial, sans-serif; padding: 12px; background: #fff;">
-        <h3 style="margin-top: 0;">${title}</h3>
-        ${body}
-        ${extra}
-      </main>
-    `;
-    popup.focus();
-    setPlayerPopup(popup);
   };
 
   useEffect(() => {
-    if (spotifyConnected) {
-      void initializeSpotifyWebPlayer();
-    }
-  }, [spotifyConnected]);
+    void refreshSpotifyStatus();
 
-  const initializeSpotifyWebPlayer = async (forceRecreate = false) => {
-    if (forceRecreate && spotifyPlayerRef.current) {
-      try {
-        spotifyPlayerRef.current.disconnect();
-      } catch {
-      }
-      spotifyPlayerRef.current = null;
-      spotifyDeviceIdRef.current = null;
-      setSpotifyDeviceId(null);
-    }
+    const pollId = window.setInterval(() => {
+      void refreshSpotifyStatus();
+    }, 15000);
 
-    if (spotifyPlayerRef.current) {
-      return;
-    }
-
-    const loadSdk = () =>
-      new Promise<void>((resolve) => {
-        const existing = document.querySelector('script[data-spotify-sdk="true"]');
-        if (existing) {
-          resolve();
-          return;
-        }
-        const script = document.createElement('script');
-        script.src = 'https://sdk.scdn.co/spotify-player.js';
-        script.async = true;
-        script.setAttribute('data-spotify-sdk', 'true');
-        script.onload = () => resolve();
-        document.body.appendChild(script);
-      });
-
-    await loadSdk();
-
-    const windowWithSpotify = window as Window & {
-      Spotify?: {
-        Player: new (config: {
-          name: string;
-          getOAuthToken: (callback: (token: string) => void) => void;
-          volume?: number;
-        }) => {
-          addListener: (event: string, callback: (...args: any[]) => void) => void;
-          connect: () => Promise<boolean>;
-          disconnect: () => void;
-          activateElement?: () => Promise<void> | void;
-        };
-      };
-      onSpotifyWebPlaybackSDKReady?: () => void;
+    const onWindowFocus = () => {
+      void refreshSpotifyStatus();
     };
 
-    const createPlayer = async () => {
-      if (!windowWithSpotify.Spotify) {
-        return;
-      }
-      const player = new windowWithSpotify.Spotify.Player({
-        name: 'MusikCheck2 Browser Player',
-        getOAuthToken: async (callback: (token: string) => void) => {
-          const token = await api.getSpotifyAccessToken();
-          callback(token.data.access_token);
-        },
-        volume: 0.8,
-      });
-
-      player.addListener('ready', ({ device_id }: { device_id: string }) => {
-        spotifyDeviceIdRef.current = device_id;
-        setSpotifyDeviceId(device_id);
-        console.log('[Spotify SDK] Device ready:', device_id);
-      });
-      player.addListener('not_ready', ({ device_id }: { device_id: string }) => {
-        if (spotifyDeviceIdRef.current === device_id) {
-          spotifyDeviceIdRef.current = null;
-          setSpotifyDeviceId(null);
-        }
-      });
-      player.addListener('initialization_error', ({ message }: { message: string }) => setError(message));
-      player.addListener('authentication_error', ({ message }: { message: string }) => setError(message));
-      player.addListener('account_error', ({ message }: { message: string }) => setError(message));
-
-      const connected = await player.connect();
-      if (!connected) {
-        throw new Error('Spotify SDK player could not connect. Keep this tab open and try again.');
-      }
-
-      spotifyPlayerRef.current = player;
-      await new Promise((resolve) => window.setTimeout(resolve, 1200));
-    };
-
-    if (windowWithSpotify.Spotify) {
-      await createPlayer();
-      return;
-    }
-
-    await new Promise<void>((resolve) => {
-      windowWithSpotify.onSpotifyWebPlaybackSDKReady = () => {
-        void createPlayer().finally(() => resolve());
-      };
-    });
-  };
-
-  const ensureSpotifyBrowserDevice = async (): Promise<string | null> => {
-    await initializeSpotifyWebPlayer();
-
-    const player = spotifyPlayerRef.current as
-      | { activateElement?: () => Promise<void> | void; connect?: () => Promise<boolean> }
-      | null;
-    if (player?.connect && !spotifyDeviceIdRef.current) {
-      console.log('[Spotify SDK] Connecting player...');
-      await player.connect();
-      await new Promise((resolve) => window.setTimeout(resolve, 1200));
-    }
-    if (player?.activateElement) {
-      console.log('[Spotify SDK] Activating element...');
-      await player.activateElement();
-    }
-
-    if (spotifyDeviceIdRef.current) {
-      console.log('[Spotify SDK] Using cached device:', spotifyDeviceIdRef.current);
-      return spotifyDeviceIdRef.current;
-    }
-
-    const timeoutMs = 8000;
-    const startedAt = Date.now();
-    while (Date.now() - startedAt < timeoutMs) {
-      await new Promise((resolve) => window.setTimeout(resolve, 300));
-      if (spotifyDeviceIdRef.current) {
-        console.log('[Spotify SDK] Device ready after wait:', spotifyDeviceIdRef.current);
-        return spotifyDeviceIdRef.current;
-      }
-    }
-
-    console.warn('[Spotify SDK] First device wait timed out, recreating player...');
-    await initializeSpotifyWebPlayer(true);
-
-    const recreatedPlayer = spotifyPlayerRef.current as
-      | { activateElement?: () => Promise<void> | void; connect?: () => Promise<boolean> }
-      | null;
-    if (recreatedPlayer?.activateElement) {
-      console.log('[Spotify SDK] Activating element after recreate...');
-      await recreatedPlayer.activateElement();
-    }
-
-    const retryStartedAt = Date.now();
-    while (Date.now() - retryStartedAt < timeoutMs) {
-      await new Promise((resolve) => window.setTimeout(resolve, 300));
-      if (spotifyDeviceIdRef.current) {
-        console.log('[Spotify SDK] Device ready after recreate:', spotifyDeviceIdRef.current);
-        return spotifyDeviceIdRef.current;
-      }
-    }
-
-    console.warn('[Spotify SDK] Device ID not available after timeout');
-    return null;
-  };
-
-  useEffect(() => {
+    window.addEventListener('focus', onWindowFocus);
     return () => {
-      snippetPlayer.dispose();
-      if (spotifyPlayerRef.current) {
-        spotifyPlayerRef.current.disconnect();
-      }
-      if (playerPopup && !playerPopup.closed) {
-        playerPopup.close();
-      }
+      window.clearInterval(pollId);
+      window.removeEventListener('focus', onWindowFocus);
     };
-  }, [snippetPlayer, playerPopup]);
+  }, []);
 
   useEffect(() => {
     if (!folderInputRef.current) return;
@@ -1154,25 +882,71 @@ export function HostPage() {
     folderInputRef.current.setAttribute('directory', '');
   }, []);
 
-  const localRoundForPanel: RoundState | null = localCurrentSong
-    ? {
-        round_kind: 'audio',
-        song_number: (localSongIndex ?? 0) + 1,
-        stage_index: highestPlayedStageIndex,
-        stage_duration_seconds:
-          getConfiguredStageDurations()[highestPlayedStageIndex] ?? LOCAL_STAGE_DURATIONS_DEFAULT[highestPlayedStageIndex],
-        points_available: getActiveSnippetPoints(),
-        snippet_url: localCurrentSong.snippetUrl,
-        can_guess: false,
-        status: 'playing',
-      }
-    : null;
+  const gameStarted = Boolean(state && (state.teams.length > 0 || state.current_round));
+
+  const startBackendRound = async () => {
+    if (!state?.lobby_code) {
+      return;
+    }
+    try {
+      const result = await api.startRound(state.lobby_code);
+      setState(result.data);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  };
+
+  const nextBackendStage = async () => {
+    if (!state?.lobby_code) {
+      return;
+    }
+    try {
+      const result = await api.nextStage(state.lobby_code);
+      setState(result.data);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  };
+
+  const toggleTeamFact = async (teamId: string, fact: 'artist' | 'title') => {
+    if (!state?.lobby_code) {
+      return;
+    }
+    try {
+      const result = await api.toggleTeamFact(state.lobby_code, teamId, fact);
+      setState(result.data);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  };
+
+  const applyWrongGuess = async (teamId: string) => {
+    if (!state?.lobby_code) {
+      return;
+    }
+    try {
+      const result = await api.applyWrongGuessPenalty(state.lobby_code, teamId);
+      setState(result.data);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  };
 
   return (
     <main>
       <h1>MusikCheck2 Host</h1>
+      <p>
+        Spotify: {spotifyConnected ? 'Connected' : 'Not connected'}
+        <button onClick={connectSpotify} disabled={spotifyAuthBusy} style={{ marginLeft: 8 }}>
+          {spotifyAuthBusy ? 'Connecting...' : spotifyConnected ? 'Reconnect Spotify' : 'Connect Spotify'}
+        </button>
+      </p>
 
-      {!localStarted && setupStep === 'mode-cards' && (
+      {!gameStarted && setupStep === 'mode-cards' && (
         <section>
           <h3>Select Game Mode</h3>
           <p>Choose a preset card or create a custom game mode.</p>
@@ -1188,12 +962,6 @@ export function HostPage() {
           {!runtimeTestMode && !youtubeApiConfigured && (
             <p>YouTube API key is not configured; real YouTube ingestion will fail.</p>
           )}
-          <p>
-            Spotify: {spotifyConnected ? 'Connected' : 'Not connected'}
-            <button onClick={connectSpotify} disabled={spotifyAuthBusy} style={{ marginLeft: 8 }}>
-              {spotifyAuthBusy ? 'Connecting...' : 'Connect Spotify'}
-            </button>
-          </p>
           <div className="source-list">
             {gameModes.map((preset) => (
               <button key={preset.key} className="source-row" onClick={() => openPresetCard(preset)}>
@@ -1209,7 +977,7 @@ export function HostPage() {
         </section>
       )}
 
-      {!localStarted && setupStep === 'mode-details' && (
+      {!gameStarted && setupStep === 'mode-details' && (
         <section>
           <h3>{modeDetailsTitle || 'Game Mode Details'}</h3>
           <p>
@@ -1446,11 +1214,11 @@ export function HostPage() {
         </section>
       )}
 
-      {setupStep === 'game-setup' && !localStarted && (
+      {setupStep === 'game-setup' && !gameStarted && (
         <section>
           <h3>Game Setup</h3>
           <p>
-            Game mode: {modeDetailsTitle || (gameModes.find((preset) => preset.key === selectedPresetKey)?.name ?? selectedPresetKey)}
+            Game mode: {state?.mode?.name || modeDetailsTitle || (gameModes.find((preset) => preset.key === selectedPresetKey)?.name ?? selectedPresetKey)}
           </p>
           <p>Phones: {modeRequiresPhoneConnections ? 'Required' : 'Optional'}</p>
           <label>
@@ -1566,110 +1334,56 @@ export function HostPage() {
         </section>
       )}
 
-      {localStarted && (
-        <section className="single-tv-screen">
-          <p>Mode: Single TV</p>
-
-          <div className="top-controls">
-            <button onClick={() => playLocalSnippet(0)} disabled={!localCurrentSong}>
-              Snippet 1
-            </button>
-            <button onClick={() => playLocalSnippet(1)} disabled={!localCurrentSong}>
-              Snippet 2
-            </button>
-            <button onClick={() => playLocalSnippet(2)} disabled={!localCurrentSong}>
-              Snippet 3
-            </button>
-            <div className="spacer" />
-            <button onClick={revealLocalSong} disabled={!localCurrentSong}>
-              Reveal
-            </button>
-            <button onClick={nextLocalSong}>Next Song</button>
+      {gameStarted && (
+        <section className="single-tv-screen" style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '24px', alignItems: 'start' }}>
+            <RoundPanel
+              round={state?.current_round ?? null}
+              teams={state?.teams ?? []}
+              onStart={() => void startBackendRound()}
+              onNextStage={() => void nextBackendStage()}
+              onToggleFact={(teamId, fact) => void toggleTeamFact(teamId, fact)}
+              onApplyWrongGuess={(teamId) => void applyWrongGuess(teamId)}
+              onError={setError}
+            />
+            <Scoreboard teams={state?.teams ?? []} />
           </div>
 
-          {localRevealed && localCurrentSong && (
-            <>
-              <p>
-                {localCurrentSong.artist} — {localCurrentSong.title} • {getSourceInfo(localCurrentSong, localCurrentSource)}
-              </p>
-              <p>
-                <button onClick={openPlayerPopup}>Pop out player</button>
-              </p>
-              {localCurrentSong.sourceType !== 'youtube' ? (
-                localCurrentSong.sourceType === 'spotify' ? (
-                  <p>
-                    Full playback for Spotify opens in Spotify app/web player.
-                    <a href={localCurrentSong.snippetUrl} target="_blank" rel="noreferrer" style={{ marginLeft: 8 }}>
-                      Open in Spotify
-                    </a>
-                  </p>
-                ) : (
-                  <audio controls src={localCurrentSong.snippetUrl} style={{ width: '100%', maxWidth: 560 }} />
-                )
-              ) : (
-                <p>
-                  Audio-only full-song playback for YouTube is not available in-browser with playlist metadata links.
-                  <a href={getYoutubeWatchUrl(localCurrentSong.snippetUrl)} target="_blank" rel="noreferrer" style={{ marginLeft: 8 }}>
-                    Open on YouTube
-                  </a>
-                </p>
-              )}
-            </>
+          {state?.message && (
+            <div style={{ padding: '16px', backgroundColor: '#e3f2fd', borderLeft: '4px solid #2196F3', borderRadius: '4px' }}>
+              <p style={{ margin: '0', fontSize: '14px', color: '#1565c0' }}>{state.message}</p>
+            </div>
           )}
 
-          {localCurrentSong && (
-            <p>
-              Active stage points: {localRoundForPanel?.points_available ?? getActiveSnippetPoints()} (scoring based on
-              snippet {highestPlayedStageIndex + 1}; last played snippet {lastPlayedStageIndex + 1})
-            </p>
-          )}
-
-          <Scoreboard teams={localTeams} />
-          <section>
-            <h3>Teams</h3>
-            {localTeams.map((team) => (
-              <div key={team.id} className="team-row">
-                <div className="team-label">{team.name}</div>
-                <div className="team-lane">
-                  <div
-                    className="team-box"
-                    style={{
-                      left: `${
-                        Math.max(
-                          0,
-                          Math.min(1, team.score / Math.max(1, Number.parseInt(requiredPointsToWin, 10) || LOCAL_REQUIRED_POINTS_TO_WIN)),
-                        ) * 90
-                      }%`,
-                    }}
-                  >
-                    {team.score}
-                  </div>
-                </div>
-                <div className="team-actions">
-                  <button
-                    onClick={() => toggleTeamFact(team.id, 'artist')}
-                    disabled={!localCurrentSong}
-                  >
-                    Artist {teamRoundGuessState[team.id]?.artistPoints ? '✓' : ''}
-                  </button>
-                  <button
-                    onClick={() => toggleTeamFact(team.id, 'title')}
-                    disabled={!localCurrentSong}
-                  >
-                    Title {teamRoundGuessState[team.id]?.titlePoints ? '✓' : ''}
-                  </button>
-                  <button onClick={() => applyWrongGuessPenalty(team.id)} disabled={!localCurrentSong}>
-                    Wrong (-{Math.max(0, Number.parseInt(wrongGuessPenalty, 10) || 0)})
-                  </button>
-                </div>
-              </div>
-            ))}
-          </section>
-          {localMessage && <p>{localMessage}</p>}
-
-          <div className="bottom-row">
-            <button className="quit-button" onClick={resetToMenu}>
-              Quit
+          <div style={{ display: 'flex', gap: '12px', justifyContent: 'space-between' }}>
+            <button
+              onClick={() => void startBackendRound()}
+              style={{
+                padding: '12px 24px',
+                fontSize: '16px',
+                backgroundColor: '#4CAF50',
+                color: 'white',
+                border: 'none',
+                borderRadius: '4px',
+                cursor: 'pointer',
+              }}
+            >
+              ▶ Next Song
+            </button>
+            <button
+              className="quit-button"
+              onClick={resetToMenu}
+              style={{
+                padding: '12px 24px',
+                fontSize: '16px',
+                backgroundColor: '#f44336',
+                color: 'white',
+                border: 'none',
+                borderRadius: '4px',
+                cursor: 'pointer',
+              }}
+            >
+              ⏹ Quit Game
             </button>
           </div>
         </section>

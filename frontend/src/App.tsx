@@ -7,6 +7,7 @@ export default function App() {
   return (
     <Routes>
       <Route path="/host" element={<HostPage />} />
+      <Route path="/host/:code" element={<HostPage />} />
       <Route path="/player/:code" element={<PlayerPage />} />
       <Route path="*" element={<Navigate to="/host" replace />} />
     </Routes>

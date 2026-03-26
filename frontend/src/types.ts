@@ -11,6 +11,16 @@ export type PlayerState = {
   ready: boolean;
 };
 
+export type TeamGuessState = {
+  team_id: string;
+  artist_guessed: boolean;
+  title_guessed: boolean;
+  artist_points: number;
+  title_points: number;
+  bonus_points: number;
+  total_points: number;
+};
+
 export type RoundState = {
   round_kind: string;
   song_number: number;
@@ -20,6 +30,7 @@ export type RoundState = {
   snippet_url: string;
   can_guess: boolean;
   status: string;
+  team_guesses: Record<string, TeamGuessState>;
 };
 
 export type GameState = {
@@ -29,6 +40,7 @@ export type GameState = {
   teams: TeamState[];
   players: PlayerState[];
   current_round: RoundState | null;
+  host_runtime_state?: Record<string, unknown> | null;
   message?: string | null;
 };
 

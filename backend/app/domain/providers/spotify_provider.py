@@ -38,14 +38,13 @@ class SpotifyPlaylistProvider(MediaProvider):
                 artist_names = [str(artist.get("name") or "").strip() for artist in artists if artist.get("name")]
                 artist = ", ".join([name for name in artist_names if name]) or "Unknown Artist"
                 duration_ms = int(track.get("duration_ms") or 0)
-                external_url = str((track.get("external_urls") or {}).get("spotify") or "").strip()
 
                 items.append(
                     MediaItem(
                         source_id=f"sp:{playlist_id}:{track_id}",
                         title=title,
                         artist=artist,
-                        media_path=external_url or f"https://open.spotify.com/track/{track_id}",
+                        media_path=f"spotify:track:{track_id}",
                         duration_seconds=(duration_ms // 1000) if duration_ms > 0 else None,
                     )
                 )

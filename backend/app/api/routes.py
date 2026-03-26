@@ -32,13 +32,17 @@ from app.schemas.spotify import (
 )
 from app.schemas.game import (
     ApiEnvelope,
+    ApplyWrongGuessPenaltyRequest,
     CreateLobbyRequest,
     GuessRequest,
     JoinLobbyRequest,
     PlayerReadyRequest,
     RuntimeConfigState,
     RuntimeConfigUpdateRequest,
+    SetTeamsRequest,
     StopRequest,
+    ToggleTeamFactRequest,
+    UpdateHostRuntimeStateRequest,
 )
 from app.schemas.game_mode import (
     CreateGameModePresetRequest,
@@ -452,6 +456,17 @@ async def join_lobby(code: str, payload: JoinLobbyRequest, db: Session = Depends
         raise HTTPException(status_code=404, detail=str(error)) from error
 
 
+@router.post("/lobbies/{code}/teams", response_model=ApiEnvelope)
+async def set_lobby_teams(code: str, payload: SetTeamsRequest, db: Session = Depends(get_db)):
+    try:
+        game_engine.set_lobby_teams(db, code, payload.team_names)
+        state = game_engine.get_state(db, code, message="Teams updated")
+        await ws_manager.broadcast(code, {"type": "state", "data": state.model_dump()})
+        return ApiEnvelope(data=state)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
+
 @router.post("/lobbies/{code}/players/ready", response_model=ApiEnvelope)
 async def update_player_ready(code: str, payload: PlayerReadyRequest, db: Session = Depends(get_db)):
     try:
@@ -513,5 +528,38 @@ async def next_stage(code: str, db: Session = Depends(get_db)):
 def get_lobby_state(code: str, db: Session = Depends(get_db)):
     try:
         return ApiEnvelope(data=game_engine.get_state(db, code))
+    except ValueError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+
+
+@router.post("/lobbies/{code}/host-state", response_model=ApiEnvelope)
+async def update_host_runtime_state(code: str, payload: UpdateHostRuntimeStateRequest, db: Session = Depends(get_db)):
+    try:
+        game_engine.set_host_runtime_state(db, code, payload.state)
+        state = game_engine.get_state(db, code, message="Host runtime state updated")
+        await ws_manager.broadcast(code, {"type": "state", "data": state.model_dump()})
+        return ApiEnvelope(data=state)
+    except ValueError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+
+
+@router.post("/lobbies/{code}/rounds/toggle-fact", response_model=ApiEnvelope)
+async def toggle_team_fact(code: str, payload: ToggleTeamFactRequest, db: Session = Depends(get_db)):
+    try:
+        result = game_engine.toggle_team_fact(db, code, payload.team_id, payload.fact)
+        state = game_engine.get_state(db, code, message=f"{result['team_name']}: {payload.fact} ({result['points_delta']:+d}) ➜ {result['total_team_score']} pts.")
+        await ws_manager.broadcast(code, {"type": "state", "data": state.model_dump()})
+        return ApiEnvelope(data=state)
+    except ValueError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+
+
+@router.post("/lobbies/{code}/rounds/wrong-guess-penalty", response_model=ApiEnvelope)
+async def apply_wrong_guess_penalty(code: str, payload: ApplyWrongGuessPenaltyRequest, db: Session = Depends(get_db)):
+    try:
+        result = game_engine.apply_wrong_guess_penalty(db, code, payload.team_id)
+        state = game_engine.get_state(db, code, message=f"{result['team_name']}: {result['message']}")
+        await ws_manager.broadcast(code, {"type": "state", "data": state.model_dump()})
+        return ApiEnvelope(data=state)
     except ValueError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error

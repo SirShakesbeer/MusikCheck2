@@ -103,6 +103,9 @@ export const api = {
     params.set('limit', String(limit));
     return get<IndexedTracksEnvelope>(`/media/tracks?${params.toString()}`);
   },
+  getLobbyState: (code: string) => get<ApiEnvelope>(`/lobbies/${code}`),
+  saveHostRuntimeState: (code: string, state: Record<string, unknown>) =>
+    post<ApiEnvelope, { state: Record<string, unknown> }>(`/lobbies/${code}/host-state`, { state }),
   createLobby: (payload: CreateLobbyPayload) => post<ApiEnvelope, CreateLobbyPayload>('/lobbies', payload),
   ingestSourcePreview: (providerKey: string, source: string) =>
     post<IngestPreviewEnvelope, { provider_key: string; source: string }>('/media/ingest-preview', {
@@ -132,6 +135,10 @@ export const api = {
       player_name: playerName,
       team_name: teamName,
     }),
+  setLobbyTeams: (code: string, teamNames: string[]) =>
+    post<ApiEnvelope, { team_names: string[] }>(`/lobbies/${code}/teams`, {
+      team_names: teamNames,
+    }),
   setPlayerReady: (code: string, playerId: string, ready: boolean) =>
     post<ApiEnvelope, { player_id: string; ready: boolean }>(`/lobbies/${code}/players/ready`, {
       player_id: playerId,
@@ -150,4 +157,13 @@ export const api = {
       artist,
     }),
   nextStage: (code: string) => post<ApiEnvelope, Record<string, never>>(`/lobbies/${code}/rounds/next-stage`, {}),
+  toggleTeamFact: (code: string, teamId: string, fact: string) =>
+    post<ApiEnvelope, { team_id: string; fact: string }>(`/lobbies/${code}/rounds/toggle-fact`, {
+      team_id: teamId,
+      fact,
+    }),
+  applyWrongGuessPenalty: (code: string, teamId: string) =>
+    post<ApiEnvelope, { team_id: string }>(`/lobbies/${code}/rounds/wrong-guess-penalty`, {
+      team_id: teamId,
+    }),
 };

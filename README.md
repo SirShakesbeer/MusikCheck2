@@ -178,17 +178,20 @@ npm install
 npm run dev
 ```
 
-## Next Extension Targets
+## TODO
 
 ### gameplay
 
-- Add additional mode plugins (`music_video`, `lyrics`, `instrumental`, `speed round`, `STRÄWKCÜR`) (ffmpeg audio/video/frames extraction)
-- fix randomization, ensure cross source randomization
-- Persist rounds/songs/history-tables (consistent with MusikCheck)
-- persist game status on reload (use states)
-- create persistance of user info (settings, user created gamemodes, highscores, connected local databases) (highscores consistent with MusikCheck)
-- add a local database ingestion tool that can be connected in the ui (consistent with MusikCheck)
+- persist game status on reload
 - adjust point system to be more similar to MusikCheck (penalty points, lock artist/title guess points)
+
+- fix randomization, ensure cross source randomization is balanced
+- add a local database ingestion tool that can be connected in the ui (consistent with MusikCheck)
+- make large song amounts efficient
+- Persist rounds/songs/history-tables (consistent with MusikCheck)
+- create persistance of user info (settings, user created gamemodes, highscores, connected local databases) (highscores consistent with MusikCheck)
+
+- Add additional mode plugins (`music_video`, `lyrics`, `instrumental`, `speed round`, `STRÄWKCÜR`) (ffmpeg audio/video/frames extraction)
 
 ### UI
 
@@ -201,5 +204,8 @@ npm run dev
 
 - security:
   - spotify connection security
+- update libraries
+- documentation
 - tests
 - make game locally installable
+- check for redundant/unnecessary code, ensure seperation of concerns

@@ -34,9 +34,18 @@ class MediaProcessingService:
         else:
             snippet_url = self._resolve_real_snippet_url(media_item, cache_key, spec.random_start)
             if not snippet_url:
+                # Fallback: provide detailed error info
                 raise ValueError(
-                    "Unable to build a real snippet URL for this media item while TEST_MODE is disabled."
+                    f"Unable to build snippet for media item. "
+                    f"Title: {media_item.title}, Artist: {media_item.artist}, "
+                    f"Path: {media_item.media_path}. "
+                    f"Supported: YouTube URLs, /api/media/tracks/* paths, or spotify.com URLs. "
+                    f"Enable TEST_MODE to use placeholder snippets."
                 )
+
+        snippet = ProcessedSnippet(cache_key=cache_key, snippet_url=snippet_url)
+        self._cache[cache_key] = snippet
+        return snippet
 
         snippet = ProcessedSnippet(cache_key=cache_key, snippet_url=snippet_url)
         self._cache[cache_key] = snippet
@@ -46,12 +55,18 @@ class MediaProcessingService:
         if not media_item.media_path:
             return None
 
+        # Local file API endpoint
         if media_item.media_path.startswith("/api/media/tracks/"):
             return media_item.media_path
 
+        # YouTube video
         youtube_embed = self._youtube_embed_url(media_item.media_path, cache_key, random_start)
         if youtube_embed:
             return youtube_embed
+
+        # Spotify track URI - will be played via Web Playback SDK
+        if media_item.media_path.startswith("spotify:track:"):
+            return media_item.media_path
 
         return None
 

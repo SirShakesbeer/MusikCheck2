@@ -19,7 +19,26 @@ export function PlayerPage() {
 
   useEffect(() => {
     if (!code) return;
-    return connectLobbySocket(code, setState);
+    let cancelled = false;
+
+    const hydrate = async () => {
+      try {
+        const result = await api.getLobbyState(code);
+        if (!cancelled) {
+          setState(result.data);
+          setError(null);
+        }
+      } catch {
+        // Websocket updates can still recover state if this initial fetch fails.
+      }
+    };
+
+    void hydrate();
+    const disconnect = connectLobbySocket(code, setState);
+    return () => {
+      cancelled = true;
+      disconnect();
+    };
   }, [code]);
 
   const teamId = useMemo(() => {
