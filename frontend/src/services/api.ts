@@ -1,5 +1,9 @@
 import type {
   ApiEnvelope,
+  CreateGameModePresetEnvelope,
+  CreateLobbyPayload,
+  GameModeConfig,
+  GameModesEnvelope,
   IndexedTracksEnvelope,
   IngestPreviewEnvelope,
   RegisterLocalSourceEnvelope,
@@ -57,6 +61,12 @@ function safeParseError(raw: string): string | null {
 }
 
 export const api = {
+  getGameModes: () => get<GameModesEnvelope>('/game-modes'),
+  createGameModePreset: (name: string, config: GameModeConfig) =>
+    post<CreateGameModePresetEnvelope, { name: string; config: GameModeConfig }>('/game-modes', {
+      name,
+      config,
+    }),
   getSpotifyAuthUrl: () => get<SpotifyAuthUrlEnvelope>('/spotify/auth-url'),
   getSpotifyStatus: () => get<SpotifyStatusEnvelope>('/spotify/status'),
   getSpotifyAccessToken: () => get<SpotifyAccessTokenEnvelope>('/spotify/access-token'),
@@ -92,8 +102,7 @@ export const api = {
     params.set('limit', String(limit));
     return get<IndexedTracksEnvelope>(`/media/tracks?${params.toString()}`);
   },
-  createLobby: (hostName: string, modeKey = 'classic_audio') =>
-    post<ApiEnvelope, { host_name: string; mode_key: string }>('/lobbies', { host_name: hostName, mode_key: modeKey }),
+  createLobby: (payload: CreateLobbyPayload) => post<ApiEnvelope, CreateLobbyPayload>('/lobbies', payload),
   ingestSourcePreview: (providerKey: string, source: string) =>
     post<IngestPreviewEnvelope, { provider_key: string; source: string }>('/media/ingest-preview', {
       provider_key: providerKey,
@@ -117,6 +126,11 @@ export const api = {
     post<ApiEnvelope, { player_name: string; team_name: string }>(`/lobbies/${code}/join`, {
       player_name: playerName,
       team_name: teamName,
+    }),
+  setPlayerReady: (code: string, playerId: string, ready: boolean) =>
+    post<ApiEnvelope, { player_id: string; ready: boolean }>(`/lobbies/${code}/players/ready`, {
+      player_id: playerId,
+      ready,
     }),
   startRound: (code: string) => post<ApiEnvelope, Record<string, never>>(`/lobbies/${code}/rounds/start`, {}),
   stopRound: (code: string, teamId: string, playerName: string) =>

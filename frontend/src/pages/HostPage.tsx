@@ -1,14 +1,12 @@
 import { ChangeEvent, useEffect, useMemo, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
 
-import { RoundPanel } from '../components/RoundPanel';
 import { Scoreboard } from '../components/Scoreboard';
 import { api } from '../services/api';
 import { HtmlAudioSnippetPlayer } from '../services/snippetPlayer';
 import { connectLobbySocket } from '../services/ws';
-import type { GameState, RoundState } from '../types';
+import type { GameModeConfig, GameModePresetState, GameState, RoundState } from '../types';
 
-type AppMode = 'single-tv' | 'multiplayer';
+type SetupStep = 'mode-cards' | 'mode-details' | 'game-setup';
 
 type LocalTeam = {
   id: string;
@@ -72,11 +70,15 @@ const SOURCE_TYPE_OPTIONS: { value: SourceType; label: string }[] = [
   { value: 'local-folder', label: 'Local Folder' },
 ];
 
+const ROUND_TYPES_REQUIRING_PHONES = new Set(['lyrics']);
+
 export function HostPage() {
   const snippetPlayer = useMemo(() => new HtmlAudioSnippetPlayer(), []);
   const folderInputRef = useRef<HTMLInputElement | null>(null);
 
-  const [mode, setMode] = useState<AppMode | null>(null);
+  const [setupStep, setSetupStep] = useState<SetupStep>('mode-cards');
+  const [modeDetailsEditable, setModeDetailsEditable] = useState<boolean>(false);
+  const [modeDetailsTitle, setModeDetailsTitle] = useState<string>('');
   const [setupTeams, setSetupTeams] = useState('Team A, Team B');
   const [localSources, setLocalSources] = useState<LocalSource[]>([]);
   const [newSourceType, setNewSourceType] = useState<SourceType>('local-folder');
@@ -92,6 +94,19 @@ export function HostPage() {
   const [localMessage, setLocalMessage] = useState<string | null>(null);
 
   const [hostName, setHostName] = useState('Host');
+  const [gameModes, setGameModes] = useState<GameModePresetState[]>([]);
+  const [selectedPresetKey, setSelectedPresetKey] = useState<string>('classic_audio');
+  const [audioEverySongs, setAudioEverySongs] = useState<string>('1');
+  const [videoEverySongs, setVideoEverySongs] = useState<string>('5');
+  const [lyricsEverySongs, setLyricsEverySongs] = useState<string>('10');
+  const [audioEnabled, setAudioEnabled] = useState<boolean>(true);
+  const [videoEnabled, setVideoEnabled] = useState<boolean>(true);
+  const [lyricsEnabled, setLyricsEnabled] = useState<boolean>(true);
+  const [releaseYearFrom, setReleaseYearFrom] = useState<string>('');
+  const [releaseYearTo, setReleaseYearTo] = useState<string>('');
+  const [language, setLanguage] = useState<string>('');
+  const [saveAsPreset, setSaveAsPreset] = useState<boolean>(false);
+  const [newPresetName, setNewPresetName] = useState<string>('');
   const [state, setState] = useState<GameState | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [runtimeTestMode, setRuntimeTestMode] = useState<boolean>(true);
@@ -131,6 +146,118 @@ export function HostPage() {
   const localCurrentSource =
     localSongIndex === null || localSources.length === 0 ? null : localSources[localSongIndex % localSources.length];
 
+  const applyPresetToForm = (preset: GameModePresetState) => {
+    const audioRule = preset.round_rules.find((rule) => rule.kind === 'audio');
+    const videoRule = preset.round_rules.find((rule) => rule.kind === 'video');
+    const lyricsRule = preset.round_rules.find((rule) => rule.kind === 'lyrics');
+
+    setAudioEnabled(Boolean(audioRule));
+    setVideoEnabled(Boolean(videoRule));
+    setLyricsEnabled(Boolean(lyricsRule));
+    setAudioEverySongs(audioRule ? String(audioRule.every_n_songs) : '0');
+    setVideoEverySongs(videoRule ? String(videoRule.every_n_songs) : '0');
+    setLyricsEverySongs(lyricsRule ? String(lyricsRule.every_n_songs) : '0');
+    setReleaseYearFrom(
+      typeof preset.filters.release_year_from === 'number' ? String(preset.filters.release_year_from) : '',
+    );
+    setReleaseYearTo(typeof preset.filters.release_year_to === 'number' ? String(preset.filters.release_year_to) : '');
+    setLanguage(preset.filters.language ?? '');
+  };
+
+  const activeRoundTypes = [
+    audioEnabled ? 'audio' : null,
+    videoEnabled ? 'video' : null,
+    lyricsEnabled ? 'lyrics' : null,
+  ].filter(Boolean) as string[];
+
+  const requiredPhoneRoundTypes = activeRoundTypes.filter((roundType) => ROUND_TYPES_REQUIRING_PHONES.has(roundType));
+  const modeRequiresPhoneConnections = requiredPhoneRoundTypes.length > 0;
+
+  const buildModeConfig = (): GameModeConfig => {
+    const stageDurations = [...LOCAL_STAGE_DURATIONS];
+    const stagePoints = [...LOCAL_STAGE_POINTS];
+    const rules: { kind: string; every_n_songs: number }[] = [];
+
+    const audioEvery = Number.parseInt(audioEverySongs, 10);
+    const videoEvery = Number.parseInt(videoEverySongs, 10);
+    const lyricsEvery = Number.parseInt(lyricsEverySongs, 10);
+
+    if (audioEnabled && Number.isFinite(audioEvery) && audioEvery > 0) {
+      rules.push({ kind: 'audio', every_n_songs: audioEvery });
+    }
+    if (videoEnabled && Number.isFinite(videoEvery) && videoEvery > 0) {
+      rules.push({ kind: 'video', every_n_songs: videoEvery });
+    }
+    if (lyricsEnabled && Number.isFinite(lyricsEvery) && lyricsEvery > 0) {
+      rules.push({ kind: 'lyrics', every_n_songs: lyricsEvery });
+    }
+
+    if (rules.length < 1) {
+      throw new Error('Enable at least one round type by setting its frequency to 1 or higher.');
+    }
+
+    const fromYear = Number.parseInt(releaseYearFrom, 10);
+    const toYear = Number.parseInt(releaseYearTo, 10);
+
+    return {
+      stage_durations: stageDurations,
+      stage_points: stagePoints,
+      round_rules: rules,
+      filters: {
+        release_year_from: Number.isFinite(fromYear) ? fromYear : null,
+        release_year_to: Number.isFinite(toYear) ? toYear : null,
+        language: language.trim() || null,
+      },
+    };
+  };
+
+  const openPresetCard = (preset: GameModePresetState) => {
+    setSelectedPresetKey(preset.key);
+    setModeDetailsEditable(false);
+    setModeDetailsTitle(preset.name);
+    applyPresetToForm(preset);
+    setSetupStep('mode-details');
+    setError(null);
+  };
+
+  const openCustomCard = () => {
+    const basePreset = gameModes.find((preset) => preset.key === selectedPresetKey) ?? gameModes[0] ?? null;
+    if (basePreset) {
+      applyPresetToForm(basePreset);
+      setSelectedPresetKey(basePreset.key);
+    }
+    setModeDetailsEditable(true);
+    setModeDetailsTitle('Custom Game');
+    setSetupStep('mode-details');
+    setError(null);
+  };
+
+  const ensurePhoneLobby = async () => {
+    if (state?.lobby_code) {
+      return;
+    }
+
+    const modeConfig = buildModeConfig();
+    const result = await api.createLobby({
+      host_name: hostName,
+      preset_key: selectedPresetKey,
+      mode_config: modeConfig,
+      save_as_preset: false,
+      preset_name: modeDetailsTitle || undefined,
+    });
+    setState(result.data);
+  };
+
+  const continueToGameSetup = async () => {
+    setSetupStep('game-setup');
+    try {
+      await ensurePhoneLobby();
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  };
+
   useEffect(() => {
     if (!state?.lobby_code) return;
     return connectLobbySocket(state.lobby_code, setState);
@@ -144,6 +271,13 @@ export function HostPage() {
         setYoutubeApiConfigured(Boolean(result.data.youtube_api_key_configured));
         const spotify = await api.getSpotifyStatus();
         setSpotifyConnected(Boolean(spotify.data.connected));
+        const modes = await api.getGameModes();
+        setGameModes(modes.data);
+        if (modes.data.length > 0) {
+          const defaultPreset = modes.data.find((preset) => preset.key === 'classic_audio') ?? modes.data[0];
+          setSelectedPresetKey(defaultPreset.key);
+          applyPresetToForm(defaultPreset);
+        }
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));
       }
@@ -152,29 +286,36 @@ export function HostPage() {
     void loadRuntimeConfig();
   }, []);
 
-  const createLobby = async () => {
+  const saveCurrentPreset = async () => {
+    const name = newPresetName.trim();
+    if (!name) {
+      setError('Enter a preset name first.');
+      return;
+    }
+
     try {
-      const result = await api.createLobby(hostName);
-      setState(result.data);
+      const modeConfig = buildModeConfig();
+      const result = await api.createGameModePreset(name, modeConfig);
+      const savedPreset = result.data.preset;
+      setGameModes((previous) => {
+        const withoutDuplicate = previous.filter((item) => item.key !== savedPreset.key);
+        return [...withoutDuplicate, savedPreset];
+      });
+      setSelectedPresetKey(savedPreset.key);
+      applyPresetToForm(savedPreset);
+      setSaveAsPreset(false);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
   };
 
-  const startRound = async () => {
-    if (!state) return;
-    const result = await api.startRound(state.lobby_code);
-    setState(result.data);
-  };
-
-  const nextStage = async () => {
-    if (!state) return;
-    const result = await api.nextStage(state.lobby_code);
-    setState(result.data);
-  };
-
   const startLocalGame = () => {
+    if (modeRequiresPhoneConnections && (state?.players.length ?? 0) < 1) {
+      setError('This game mode requires phones. At least one phone must be connected before starting.');
+      return;
+    }
+
     const names = setupTeams
       .split(',')
       .map((name) => name.trim())
@@ -539,7 +680,9 @@ export function HostPage() {
   };
 
   const resetToMenu = () => {
-    setMode(null);
+    setSetupStep('mode-cards');
+    setModeDetailsEditable(false);
+    setModeDetailsTitle('');
     setState(null);
     setLocalTeams([]);
     setLocalStarted(false);
@@ -820,6 +963,8 @@ export function HostPage() {
 
   const localRoundForPanel: RoundState | null = localCurrentSong
     ? {
+        round_kind: 'audio',
+        song_number: (localSongIndex ?? 0) + 1,
         stage_index: lastPlayedStageIndex,
         stage_duration_seconds: LOCAL_STAGE_DURATIONS[lastPlayedStageIndex],
         points_available: LOCAL_STAGE_POINTS[lastPlayedStageIndex],
@@ -833,10 +978,10 @@ export function HostPage() {
     <main>
       <h1>MusikCheck2 Host</h1>
 
-      {!mode && (
+      {!localStarted && setupStep === 'mode-cards' && (
         <section>
-          <h3>Game Menu</h3>
-          <p>Choose how you want to play before starting.</p>
+          <h3>Select Game Mode</h3>
+          <p>Choose a preset card or create a custom game mode.</p>
           <label>
             <input
               type="checkbox"
@@ -855,14 +1000,195 @@ export function HostPage() {
               {spotifyAuthBusy ? 'Connecting...' : 'Connect Spotify'}
             </button>
           </p>
-          <button onClick={() => setMode('single-tv')}>Single TV (one mouse)</button>
-          <button onClick={() => setMode('multiplayer')}>Phone Connections (optional)</button>
+          <div className="source-list">
+            {gameModes.map((preset) => (
+              <button key={preset.key} className="source-row" onClick={() => openPresetCard(preset)}>
+                <strong>{preset.name}</strong>
+                <span>{preset.requires_phone_connections ? 'Contains phone-required rounds' : 'No phone-required rounds'}</span>
+              </button>
+            ))}
+            <button className="source-row" onClick={openCustomCard}>
+              <strong>Custom Game</strong>
+              <span>Create your own round mix and frequencies</span>
+            </button>
+          </div>
         </section>
       )}
 
-      {mode === 'single-tv' && !localStarted && (
+      {!localStarted && setupStep === 'mode-details' && (
         <section>
-          <h3>Single TV Setup</h3>
+          <h3>{modeDetailsTitle || 'Game Mode Details'}</h3>
+          <p>
+            {modeDetailsEditable
+              ? 'Configure round types and frequencies.'
+              : 'Preset settings are read-only. You can continue or go back.'}
+          </p>
+
+          <div className="source-row">
+            <label>
+              <input
+                type="checkbox"
+                checked={audioEnabled}
+                disabled={!modeDetailsEditable}
+                onChange={(event: ChangeEvent<HTMLInputElement>) => setAudioEnabled(event.target.checked)}
+              />
+              Audio rounds
+            </label>
+            <label>
+              <input
+                type="checkbox"
+                checked={videoEnabled}
+                disabled={!modeDetailsEditable}
+                onChange={(event: ChangeEvent<HTMLInputElement>) => setVideoEnabled(event.target.checked)}
+              />
+              Video rounds
+            </label>
+            <label>
+              <input
+                type="checkbox"
+                checked={lyricsEnabled}
+                disabled={!modeDetailsEditable}
+                onChange={(event: ChangeEvent<HTMLInputElement>) => setLyricsEnabled(event.target.checked)}
+              />
+              Lyrics rounds
+            </label>
+          </div>
+
+          <div className="source-list">
+            {audioEnabled && (
+              <label>
+                Audio frequency (every N songs)
+                <input
+                  type="number"
+                  min={1}
+                  value={audioEverySongs}
+                  disabled={!modeDetailsEditable}
+                  onChange={(event: ChangeEvent<HTMLInputElement>) => setAudioEverySongs(event.target.value)}
+                />
+              </label>
+            )}
+            {videoEnabled && (
+              <label>
+                Video frequency (every N songs)
+                <input
+                  type="number"
+                  min={1}
+                  value={videoEverySongs}
+                  disabled={!modeDetailsEditable}
+                  onChange={(event: ChangeEvent<HTMLInputElement>) => setVideoEverySongs(event.target.value)}
+                />
+              </label>
+            )}
+            {lyricsEnabled && (
+              <label>
+                Lyrics frequency (every N songs)
+                <input
+                  type="number"
+                  min={1}
+                  value={lyricsEverySongs}
+                  disabled={!modeDetailsEditable}
+                  onChange={(event: ChangeEvent<HTMLInputElement>) => setLyricsEverySongs(event.target.value)}
+                />
+              </label>
+            )}
+          </div>
+
+          <div className="source-row">
+            <label>
+              Release year from
+              <input
+                type="number"
+                value={releaseYearFrom}
+                disabled={!modeDetailsEditable}
+                onChange={(event: ChangeEvent<HTMLInputElement>) => setReleaseYearFrom(event.target.value)}
+              />
+            </label>
+            <label>
+              Release year to
+              <input
+                type="number"
+                value={releaseYearTo}
+                disabled={!modeDetailsEditable}
+                onChange={(event: ChangeEvent<HTMLInputElement>) => setReleaseYearTo(event.target.value)}
+              />
+            </label>
+            <label>
+              Language
+              <input
+                value={language}
+                disabled={!modeDetailsEditable}
+                onChange={(event: ChangeEvent<HTMLInputElement>) => setLanguage(event.target.value)}
+              />
+            </label>
+          </div>
+
+          {requiredPhoneRoundTypes.length > 0 && (
+            <p>Round type {requiredPhoneRoundTypes.join(', ')} requires phones to be connected.</p>
+          )}
+
+          {modeDetailsEditable && (
+            <>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={saveAsPreset}
+                  onChange={(event: ChangeEvent<HTMLInputElement>) => setSaveAsPreset(event.target.checked)}
+                />
+                Save this setup as a new preset
+              </label>
+              <label>
+                Preset name
+                <input
+                  value={newPresetName}
+                  onChange={(event: ChangeEvent<HTMLInputElement>) => setNewPresetName(event.target.value)}
+                  placeholder="My custom mode"
+                />
+              </label>
+              <button onClick={saveCurrentPreset}>Save Preset Now</button>
+            </>
+          )}
+
+          <button onClick={() => setSetupStep('mode-cards')}>Back</button>
+          <button onClick={continueToGameSetup}>Continue</button>
+        </section>
+      )}
+
+      {setupStep === 'game-setup' && !localStarted && (
+        <section>
+          <h3>Game Setup</h3>
+          <p>
+            Game mode: {modeDetailsTitle || (gameModes.find((preset) => preset.key === selectedPresetKey)?.name ?? selectedPresetKey)}
+          </p>
+          <p>Phones: {modeRequiresPhoneConnections ? 'Required' : 'Optional'}</p>
+          <label>
+            Host name
+            <input value={hostName} onChange={(event: ChangeEvent<HTMLInputElement>) => setHostName(event.target.value)} />
+          </label>
+          <p>
+            Phone lobby code:{' '}
+            <strong>{state?.lobby_code ?? 'Not created'}</strong>
+            <button onClick={() => void ensurePhoneLobby()} style={{ marginLeft: 8 }}>
+              {state?.lobby_code ? 'Refresh Lobby' : 'Create Phone Lobby'}
+            </button>
+          </p>
+          {state?.lobby_code && (
+            <p>
+              Players join at <strong>/player/{state.lobby_code}</strong>
+            </p>
+          )}
+          <h4>Connected Phones</h4>
+          {state?.players.length ? (
+            <ul>
+              {state.players.map((player) => (
+                <li key={player.id}>
+                  {player.name} — {player.ready ? 'ready' : 'not ready'}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p>No phones connected yet.</p>
+          )}
+
           <p>Enter team names separated by commas.</p>
           <input
             value={setupTeams}
@@ -939,12 +1265,15 @@ export function HostPage() {
             <button onClick={addLocalSource}>Add Source</button>
           </div>
 
-          <button onClick={startLocalGame}>Start Game</button>
-          <button onClick={resetToMenu}>Back to Menu</button>
+          <button onClick={startLocalGame} disabled={modeRequiresPhoneConnections && (state?.players.length ?? 0) < 1}>
+            Start Game
+          </button>
+          <button onClick={() => setSetupStep('mode-details')}>Back</button>
+          <button onClick={resetToMenu}>Back to Cards</button>
         </section>
       )}
 
-      {mode === 'single-tv' && localStarted && (
+      {localStarted && (
         <section className="single-tv-screen">
           <p>Mode: Single TV</p>
 
@@ -1038,41 +1367,6 @@ export function HostPage() {
             </button>
           </div>
         </section>
-      )}
-
-      {mode === 'multiplayer' && !state && (
-        <section>
-          <h3>Optional Phone Lobby Setup</h3>
-          <label>
-            Host name
-            <input value={hostName} onChange={(event: ChangeEvent<HTMLInputElement>) => setHostName(event.target.value)} />
-          </label>
-          <button onClick={createLobby}>Create Lobby</button>
-          <button onClick={resetToMenu}>Back to Menu</button>
-        </section>
-      )}
-
-      {mode === 'multiplayer' && state && (
-        <>
-          <p>Mode: Phone Connections (optional)</p>
-          <p>Lobby code: {state.lobby_code}</p>
-          <p>
-            Players join at <strong>/player/{state.lobby_code}</strong>
-          </p>
-          <RoundPanel round={state.current_round} onStart={startRound} onNextStage={nextStage} />
-          {state.message && <p>{state.message}</p>}
-          <Scoreboard teams={state.teams} />
-          <h3>Players</h3>
-          <ul>
-            {state.players.map((player) => (
-              <li key={player.id}>{player.name}</li>
-            ))}
-          </ul>
-          <Link to={`/player/${state.lobby_code}`}>Open Player View</Link>
-          <p>
-            <button onClick={resetToMenu}>End Lobby / Menu</button>
-          </p>
-        </>
       )}
 
       {error && <p>{error}</p>}

@@ -13,6 +13,8 @@ export function PlayerPage() {
   const [guessArtist, setGuessArtist] = useState('');
   const [state, setState] = useState<GameState | null>(null);
   const [joinedTeamId, setJoinedTeamId] = useState<string | null>(null);
+  const [joinedPlayerId, setJoinedPlayerId] = useState<string | null>(null);
+  const [playerReady, setPlayerReady] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -34,10 +36,23 @@ export function PlayerPage() {
       setState(result.data);
       const joinedTeam = result.data.teams.find((team) => team.name.toLowerCase() === teamName.toLowerCase());
       setJoinedTeamId(joinedTeam?.id ?? null);
+      const joinedPlayer = result.data.players.find(
+        (player) => player.name.toLowerCase() === playerName.toLowerCase() && player.team_id === (joinedTeam?.id ?? null),
+      );
+      setJoinedPlayerId(joinedPlayer?.id ?? null);
+      setPlayerReady(Boolean(joinedPlayer?.ready));
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
+  };
+
+  const onToggleReady = async () => {
+    if (!joinedPlayerId) return;
+    const nextReady = !playerReady;
+    const result = await api.setPlayerReady(code, joinedPlayerId, nextReady);
+    setState(result.data);
+    setPlayerReady(nextReady);
   };
 
   const onStop = async () => {
@@ -67,6 +82,10 @@ export function PlayerPage() {
         STOP
       </button>
 
+      <button onClick={onToggleReady} disabled={!joinedPlayerId}>
+        {playerReady ? 'Set Not Ready' : 'Set Ready'}
+      </button>
+
       <form onSubmit={onGuess}>
         <input value={guessTitle} onChange={(e) => setGuessTitle(e.target.value)} placeholder="Song title" />
         <input value={guessArtist} onChange={(e) => setGuessArtist(e.target.value)} placeholder="Artist" />
@@ -76,6 +95,7 @@ export function PlayerPage() {
       </form>
 
       {state?.current_round && <p>Round status: {state.current_round.status}</p>}
+      {joinedPlayerId && <p>Status: {playerReady ? 'Ready' : 'Not ready'}</p>}
       {state?.message && <p>{state.message}</p>}
       {error && <p>{error}</p>}
     </main>

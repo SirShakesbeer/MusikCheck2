@@ -33,13 +33,22 @@ from app.schemas.game import (
     CreateLobbyRequest,
     GuessRequest,
     JoinLobbyRequest,
+    PlayerReadyRequest,
     RuntimeConfigState,
     RuntimeConfigUpdateRequest,
     StopRequest,
 )
+from app.schemas.game_mode import (
+    CreateGameModePresetRequest,
+    CreateGameModePresetResponse,
+    GameModeFiltersState,
+    GameModePresetState,
+    RoundTypeRuleState,
+)
+from app.services.game_mode_service import RoundTypeRule
 from app.services.service_container import (
     game_engine,
-    game_mode_registry,
+    game_mode_service,
     media_ingestion_service,
     media_library_service,
     spotify_oauth_service,
@@ -50,7 +59,92 @@ router = APIRouter()
 
 @router.get("/modes")
 def list_modes() -> dict:
-    return {"ok": True, "data": game_mode_registry.all_modes()}
+    return {"ok": True, "data": game_mode_service.all_modes()}
+
+
+@router.get("/game-modes", response_model=dict)
+def list_game_modes() -> dict:
+    data = [
+        GameModePresetState(
+            key=preset.key,
+            name=preset.name,
+            stage_durations=preset.stage_durations,
+            stage_points=preset.stage_points,
+            round_rules=[
+                RoundTypeRuleState(kind=rule.kind, every_n_songs=rule.every_n_songs)
+                for rule in preset.round_rules
+            ],
+            filters=GameModeFiltersState(
+                release_year_from=(
+                    int(preset.filters.get("release_year_from"))
+                    if preset.filters.get("release_year_from") not in (None, "")
+                    else None
+                ),
+                release_year_to=(
+                    int(preset.filters.get("release_year_to"))
+                    if preset.filters.get("release_year_to") not in (None, "")
+                    else None
+                ),
+                language=(
+                    str(preset.filters.get("language"))
+                    if preset.filters.get("language") not in (None, "")
+                    else None
+                ),
+            ),
+            requires_phone_connections=game_mode_service.mode_requires_phone_connections(preset),
+        ).model_dump()
+        for preset in game_mode_service.all_presets()
+    ]
+    return {"ok": True, "data": data}
+
+
+@router.post("/game-modes", response_model=dict)
+def create_game_mode(payload: CreateGameModePresetRequest) -> dict:
+    try:
+        preset = game_mode_service.build_custom_mode(
+            name=payload.name,
+            stage_durations=payload.config.stage_durations,
+            stage_points=payload.config.stage_points,
+            round_rules=[
+                RoundTypeRule(kind=rule.kind, every_n_songs=rule.every_n_songs)
+                for rule in payload.config.round_rules
+            ],
+            filters=payload.config.filters.model_dump(),
+        )
+        saved = game_mode_service.save_preset(preset)
+        data = CreateGameModePresetResponse(
+            preset=GameModePresetState(
+                key=saved.key,
+                name=saved.name,
+                stage_durations=saved.stage_durations,
+                stage_points=saved.stage_points,
+                round_rules=[
+                    RoundTypeRuleState(kind=rule.kind, every_n_songs=rule.every_n_songs)
+                    for rule in saved.round_rules
+                ],
+                filters=GameModeFiltersState(
+                    release_year_from=(
+                        int(saved.filters.get("release_year_from"))
+                        if saved.filters.get("release_year_from") not in (None, "")
+                        else None
+                    ),
+                    release_year_to=(
+                        int(saved.filters.get("release_year_to"))
+                        if saved.filters.get("release_year_to") not in (None, "")
+                        else None
+                    ),
+                    language=(
+                        str(saved.filters.get("language"))
+                        if saved.filters.get("language") not in (None, "")
+                        else None
+                    ),
+                ),
+                requires_phone_connections=game_mode_service.mode_requires_phone_connections(saved),
+            )
+        )
+        return {"ok": True, "data": data.model_dump()}
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
 
 
 @router.get("/providers")
@@ -304,7 +398,22 @@ def stream_indexed_track(track_id: str, db: Session = Depends(get_db)):
 @router.post("/lobbies", response_model=ApiEnvelope)
 async def create_lobby(payload: CreateLobbyRequest, db: Session = Depends(get_db)):
     try:
-        lobby = game_engine.create_lobby(db, payload.host_name, payload.mode_key)
+        custom_mode = None
+        if payload.mode_config:
+            custom_mode = game_mode_service.build_custom_mode(
+                name=(payload.preset_name or "Custom Mode"),
+                stage_durations=payload.mode_config.stage_durations,
+                stage_points=payload.mode_config.stage_points,
+                round_rules=[
+                    RoundTypeRule(kind=rule.kind, every_n_songs=rule.every_n_songs)
+                    for rule in payload.mode_config.round_rules
+                ],
+                filters=payload.mode_config.filters.model_dump(),
+            )
+            if payload.save_as_preset:
+                custom_mode = game_mode_service.save_preset(custom_mode)
+
+        lobby = game_engine.create_lobby(db, payload.host_name, payload.preset_key, custom_mode)
         state = game_engine.get_state(db, lobby.code, message="Lobby created")
         return ApiEnvelope(data=state)
     except ValueError as error:
@@ -320,6 +429,17 @@ async def join_lobby(code: str, payload: JoinLobbyRequest, db: Session = Depends
         return ApiEnvelope(data=state)
     except ValueError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
+
+
+@router.post("/lobbies/{code}/players/ready", response_model=ApiEnvelope)
+async def update_player_ready(code: str, payload: PlayerReadyRequest, db: Session = Depends(get_db)):
+    try:
+        game_engine.set_player_ready(db, code, payload.player_id, payload.ready)
+        state = game_engine.get_state(db, code, message="Player readiness updated")
+        await ws_manager.broadcast(code, {"type": "state", "data": state.model_dump()})
+        return ApiEnvelope(data=state)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
 
 
 @router.post("/lobbies/{code}/rounds/start", response_model=ApiEnvelope)

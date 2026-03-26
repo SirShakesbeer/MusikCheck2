@@ -1,0 +1,56 @@
+[
+  {
+    "key": "classic_audio",
+    "name": "Classic Audio",
+    "stage_durations": [
+      2,
+      5,
+      8
+    ],
+    "stage_points": [
+      100,
+      60,
+      30
+    ],
+    "round_rules": [
+      {
+        "kind": "audio",
+        "every_n_songs": 1
+      }
+    ],
+    "filters": {}
+  },
+  {
+    "key": "mixed_media",
+    "name": "Mixed Media",
+    "stage_durations": [
+      2,
+      5,
+      8
+    ],
+    "stage_points": [
+      100,
+      60,
+      30
+    ],
+    "round_rules": [
+      {
+        "kind": "audio",
+        "every_n_songs": 1
+      },
+      {
+        "kind": "video",
+        "every_n_songs": 5
+      },
+      {
+        "kind": "lyrics",
+        "every_n_songs": 10
+      }
+    ],
+    "filters": {
+      "release_year_from": null,
+      "release_year_to": null,
+      "language": ""
+    }
+  }
+]

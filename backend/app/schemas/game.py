@@ -1,9 +1,14 @@
 from pydantic import BaseModel, Field
 
+from app.schemas.game_mode import GameModePresetConfig, GameModePresetState
+
 
 class CreateLobbyRequest(BaseModel):
     host_name: str = Field(min_length=1, max_length=64)
-    mode_key: str = Field(default="classic_audio", min_length=1)
+    preset_key: str = Field(default="classic_audio", min_length=1)
+    mode_config: GameModePresetConfig | None = None
+    save_as_preset: bool = False
+    preset_name: str | None = Field(default=None, max_length=64)
 
 
 class JoinLobbyRequest(BaseModel):
@@ -32,9 +37,17 @@ class PlayerState(BaseModel):
     id: str
     name: str
     team_id: str | None
+    ready: bool = False
+
+
+class PlayerReadyRequest(BaseModel):
+    player_id: str
+    ready: bool
 
 
 class RoundState(BaseModel):
+    round_kind: str
+    song_number: int
     stage_index: int
     stage_duration_seconds: int
     points_available: int
@@ -46,6 +59,7 @@ class RoundState(BaseModel):
 class GameState(BaseModel):
     lobby_code: str
     mode_key: str
+    mode: GameModePresetState
     teams: list[TeamState]
     players: list[PlayerState]
     current_round: RoundState | None

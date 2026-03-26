@@ -8,9 +8,12 @@ export type PlayerState = {
   id: string;
   name: string;
   team_id: string | null;
+  ready: boolean;
 };
 
 export type RoundState = {
+  round_kind: string;
+  song_number: number;
   stage_index: number;
   stage_duration_seconds: number;
   points_available: number;
@@ -22,10 +25,59 @@ export type RoundState = {
 export type GameState = {
   lobby_code: string;
   mode_key: string;
+  mode: GameModePresetState;
   teams: TeamState[];
   players: PlayerState[];
   current_round: RoundState | null;
   message?: string | null;
+};
+
+export type RoundTypeRule = {
+  kind: string;
+  every_n_songs: number;
+};
+
+export type GameModeFilters = {
+  release_year_from?: number | null;
+  release_year_to?: number | null;
+  language?: string | null;
+};
+
+export type GameModeConfig = {
+  stage_durations: number[];
+  stage_points: number[];
+  round_rules: RoundTypeRule[];
+  filters: GameModeFilters;
+};
+
+export type GameModePresetState = {
+  key: string;
+  name: string;
+  stage_durations: number[];
+  stage_points: number[];
+  round_rules: RoundTypeRule[];
+  filters: GameModeFilters;
+  requires_phone_connections: boolean;
+};
+
+export type GameModesEnvelope = {
+  ok: boolean;
+  data: GameModePresetState[];
+};
+
+export type CreateGameModePresetEnvelope = {
+  ok: boolean;
+  data: {
+    preset: GameModePresetState;
+  };
+};
+
+export type CreateLobbyPayload = {
+  host_name: string;
+  preset_key: string;
+  mode_config?: GameModeConfig;
+  save_as_preset?: boolean;
+  preset_name?: string;
 };
 
 export type ApiEnvelope = {

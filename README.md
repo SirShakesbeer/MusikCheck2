@@ -47,10 +47,18 @@ python scripts/index_local_library.py "D:/Music"
 
 ### 3) Game Engine
 
-- `backend/app/domain/game_modes/base.py`: plugin contract for mode-specific behavior
-- `backend/app/domain/game_modes/classic_audio.py`: stage durations, points, guess validation, UI config
+- `backend/app/services/game_mode_service.py`: preset storage, validation, frequency scheduling (`audio`, `video`, `lyrics`, ...)
+- Presets are persisted in `backend/app/data/game_mode_presets.json`
 - `backend/app/services/game_engine.py`: lobbies, teams, round progression, STOP, guess scoring
 - In non-test mode, round media is selected from indexed tracks; if none exist, optional `YOUTUBE_DEFAULT_PLAYLIST` can be used as fallback
+
+### 3.1) Game Mode Presets
+
+- `GET /api/game-modes`: list all available presets
+- `POST /api/game-modes`: save a new preset for reuse
+- `POST /api/lobbies`: can start from a preset and optionally override frequencies/filters inline
+- Round type selection is frequency-based (for example video every 5 songs, lyrics every 10 songs)
+- Filters are included in the mode model (`release_year_from`, `release_year_to`, `language`) and are ready for future media selection logic
 
 ### 4) Multiplayer Layer
 
@@ -68,15 +76,14 @@ python scripts/index_local_library.py "D:/Music"
 - Source setup in Single-TV menu supports editable source list with backend ingestion preview
 - `frontend/src/services/snippetPlayer.ts` defines a `SnippetPlayer` interface (current implementation: `HtmlAudioSnippetPlayer`) for easier future media-type players
 
-## Plugin-like Game Modes
+## Preset-based Game Modes
 
-Each mode plugin defines:
-- snippet generation rules (`snippet_for_stage`)
-- scoring rules (`stage_points`)
-- UI config (`ui_config`)
-- guess validation (`is_guess_correct`)
+Game modes are now data-driven presets (JSON + API), not hard-coded plugins.
 
-Add a new mode by implementing `GameModePlugin` and registering it in `service_container.py`.
+To add a new round type later (for example `video`, `lyrics`, `instrumental`):
+- add/enable the round kind in preset `round_rules`
+- implement media rendering/selection behavior for that kind
+- no registry/plugin wiring changes are required
 
 ## Prototype Features Included
 
@@ -178,6 +185,7 @@ npm run dev
 - Replace placeholder snippet generation with ffmpeg audio/video/frames extraction
 - Add additional mode plugins (`music_video`, `lyrics`, `instrumental`)
 - Persist rounds/songs/history tables
+- persist game status on reload (use states)
 - Add authentication and host permissions
 - Add provider-specific ingestion workers
 - make gamemode modular and create presets (which modes are included + frequency)
@@ -191,3 +199,10 @@ npm run dev
 - update point display
 - add point buttons
 - update graphics
+
+### Finally
+
+- security:
+  - spotify connection security
+- tests
+- make game locally installable

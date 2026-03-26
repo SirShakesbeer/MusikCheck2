@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from urllib.parse import parse_qs, urlparse
 
 from app.core.config import settings
-from app.domain.game_modes.base import SnippetSpec
+from app.domain.snippets import SnippetSpec
 from app.domain.providers.base import MediaItem
 
 
