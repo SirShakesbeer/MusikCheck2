@@ -2,52 +2,46 @@ import { ChangeEvent, useEffect, useMemo, useRef, useState } from 'react';
 
 import { Scoreboard } from '../components/Scoreboard';
 import { api } from '../services/api';
+import {
+  LOCAL_BOTH_BONUS_POINTS,
+  LOCAL_REQUIRED_POINTS_TO_WIN,
+  LOCAL_STAGE_DURATIONS_DEFAULT,
+  LOCAL_STAGE_POINTS,
+  LOCAL_WRONG_GUESS_PENALTY,
+  buildFormValuesFromPreset,
+  getConfiguredStageDurations,
+  getDefaultModeFormValues,
+  getRequiredPhoneRoundTypes,
+  type ModeFormValues,
+} from '../services/gameModeFormService';
+import {
+  continueToGameSetup as continueToGameSetupFlow,
+  ensurePhoneLobby as ensurePhoneLobbyFlow,
+  openCustomCard as openCustomCardFlow,
+  openPresetCard as openPresetCardFlow,
+  saveCurrentPreset as saveCurrentPresetFlow,
+} from '../services/hostSetupController';
+import {
+  buildSongsForLocalGame,
+  buildTeams,
+  getActiveSnippetPoints as getActiveSnippetPointsFlow,
+  type LocalSong,
+} from '../services/localRoundController';
+import {
+  addSource,
+  cleanupBackendSources,
+  extractFolderSelection,
+  pickLocalFolderName,
+  type LocalSource,
+  type SourceType,
+} from '../services/mediaSourceController';
 import { HtmlAudioSnippetPlayer } from '../services/snippetPlayer';
+import { useHostSetupStore } from '../stores/hostSetupStore';
 import { connectLobbySocket } from '../services/ws';
-import type { GameModeConfig, GameModePresetState, GameState, RoundState } from '../types';
+import type { GameModePresetState, GameState, RoundState, RoundTeamState } from '../types';
 
-type SetupStep = 'mode-cards' | 'mode-details' | 'game-setup';
-
-type LocalTeam = {
-  id: string;
-  name: string;
-  score: number;
-};
-
-type SourceType = 'youtube-playlist' | 'spotify-playlist' | 'local-folder';
-
-type LocalSource = {
-  id: string;
-  type: SourceType;
-  value: string;
-  backendSourceId?: string;
-  importedCount?: number;
-  ingestError?: string;
-};
-
-type LocalSong = {
-  title: string;
-  artist: string;
-  sourceType: 'local' | 'youtube' | 'spotify';
-  sourceValue: string;
-  snippetUrl: string;
-  durationSeconds?: number;
-  spotifyTrackId?: string;
-};
-
-type TeamRoundGuessState = {
-  artistPoints: number;
-  titlePoints: number;
-  bonusPoints: number;
-};
-
-const LOCAL_STAGE_DURATIONS_DEFAULT = [2, 5, 8];
-const LOCAL_STAGE_POINTS = [3, 2, 1];
 const PLACEHOLDER_SNIPPET_URL =
   'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=';
-const LOCAL_BOTH_BONUS_POINTS = 1;
-const LOCAL_WRONG_GUESS_PENALTY = 1;
-const LOCAL_REQUIRED_POINTS_TO_WIN = 15;
 const MOCK_LOCAL_SONGS: LocalSong[] = [
   {
     title: 'Never Gonna Give You Up',
@@ -78,21 +72,24 @@ const SOURCE_TYPE_OPTIONS: { value: SourceType; label: string }[] = [
   { value: 'local-folder', label: 'Local Folder' },
 ];
 
-const ROUND_TYPES_REQUIRING_PHONES = new Set(['lyrics']);
-
 export function HostPage() {
   const snippetPlayer = useMemo(() => new HtmlAudioSnippetPlayer(), []);
   const folderInputRef = useRef<HTMLInputElement | null>(null);
 
-  const [setupStep, setSetupStep] = useState<SetupStep>('mode-cards');
-  const [modeDetailsEditable, setModeDetailsEditable] = useState<boolean>(false);
-  const [modeDetailsTitle, setModeDetailsTitle] = useState<string>('');
+  const {
+    setupStep,
+    modeDetailsEditable,
+    modeDetailsTitle,
+    setSetupStep,
+    setModeDetailsEditable,
+    setModeDetailsTitle,
+    resetSetup,
+  } = useHostSetupStore();
   const [setupTeams, setSetupTeams] = useState('Team A, Team B');
   const [localSources, setLocalSources] = useState<LocalSource[]>([]);
   const [newSourceType, setNewSourceType] = useState<SourceType>('local-folder');
   const [newSourceValue, setNewSourceValue] = useState('');
   const [pendingLocalFileCount, setPendingLocalFileCount] = useState<number>(0);
-  const [localTeams, setLocalTeams] = useState<LocalTeam[]>([]);
   const [localSongs, setLocalSongs] = useState<LocalSong[]>([]);
   const [localStarted, setLocalStarted] = useState(false);
   const [snippetStartOffsets, setSnippetStartOffsets] = useState<number[]>([0, 0, 0]);
@@ -100,33 +97,34 @@ export function HostPage() {
   const [localRevealed, setLocalRevealed] = useState(false);
   const [lastPlayedStageIndex, setLastPlayedStageIndex] = useState<number>(0);
   const [highestPlayedStageIndex, setHighestPlayedStageIndex] = useState<number>(0);
-  const [teamRoundGuessState, setTeamRoundGuessState] = useState<Record<string, TeamRoundGuessState>>({});
   const [localMessage, setLocalMessage] = useState<string | null>(null);
 
   const [hostName, setHostName] = useState('Host');
   const [gameModes, setGameModes] = useState<GameModePresetState[]>([]);
   const [selectedPresetKey, setSelectedPresetKey] = useState<string>('classic_audio');
-  const [audioEverySongs, setAudioEverySongs] = useState<string>('1');
-  const [videoEverySongs, setVideoEverySongs] = useState<string>('5');
-  const [lyricsEverySongs, setLyricsEverySongs] = useState<string>('10');
-  const [audioEnabled, setAudioEnabled] = useState<boolean>(true);
-  const [videoEnabled, setVideoEnabled] = useState<boolean>(true);
-  const [lyricsEnabled, setLyricsEnabled] = useState<boolean>(true);
-  const [releaseYearFrom, setReleaseYearFrom] = useState<string>('');
-  const [releaseYearTo, setReleaseYearTo] = useState<string>('');
-  const [language, setLanguage] = useState<string>('');
-  const [snippet1Duration, setSnippet1Duration] = useState<string>(String(LOCAL_STAGE_DURATIONS_DEFAULT[0]));
-  const [snippet2Duration, setSnippet2Duration] = useState<string>(String(LOCAL_STAGE_DURATIONS_DEFAULT[1]));
-  const [snippet3Duration, setSnippet3Duration] = useState<string>(String(LOCAL_STAGE_DURATIONS_DEFAULT[2]));
-  const [snippet1Points, setSnippet1Points] = useState<string>(String(LOCAL_STAGE_POINTS[0]));
-  const [snippet2Points, setSnippet2Points] = useState<string>(String(LOCAL_STAGE_POINTS[1]));
-  const [snippet3Points, setSnippet3Points] = useState<string>(String(LOCAL_STAGE_POINTS[2]));
-  const [bothBonusPoints, setBothBonusPoints] = useState<string>(String(LOCAL_BOTH_BONUS_POINTS));
-  const [wrongGuessPenalty, setWrongGuessPenalty] = useState<string>(String(LOCAL_WRONG_GUESS_PENALTY));
-  const [requiredPointsToWin, setRequiredPointsToWin] = useState<string>(String(LOCAL_REQUIRED_POINTS_TO_WIN));
+  const defaultModeFormValues = getDefaultModeFormValues();
+  const [audioEverySongs, setAudioEverySongs] = useState<string>(defaultModeFormValues.audioEverySongs);
+  const [videoEverySongs, setVideoEverySongs] = useState<string>(defaultModeFormValues.videoEverySongs);
+  const [lyricsEverySongs, setLyricsEverySongs] = useState<string>(defaultModeFormValues.lyricsEverySongs);
+  const [audioEnabled, setAudioEnabled] = useState<boolean>(defaultModeFormValues.audioEnabled);
+  const [videoEnabled, setVideoEnabled] = useState<boolean>(defaultModeFormValues.videoEnabled);
+  const [lyricsEnabled, setLyricsEnabled] = useState<boolean>(defaultModeFormValues.lyricsEnabled);
+  const [releaseYearFrom, setReleaseYearFrom] = useState<string>(defaultModeFormValues.releaseYearFrom);
+  const [releaseYearTo, setReleaseYearTo] = useState<string>(defaultModeFormValues.releaseYearTo);
+  const [language, setLanguage] = useState<string>(defaultModeFormValues.language);
+  const [snippet1Duration, setSnippet1Duration] = useState<string>(defaultModeFormValues.snippet1Duration);
+  const [snippet2Duration, setSnippet2Duration] = useState<string>(defaultModeFormValues.snippet2Duration);
+  const [snippet3Duration, setSnippet3Duration] = useState<string>(defaultModeFormValues.snippet3Duration);
+  const [snippet1Points, setSnippet1Points] = useState<string>(defaultModeFormValues.snippet1Points);
+  const [snippet2Points, setSnippet2Points] = useState<string>(defaultModeFormValues.snippet2Points);
+  const [snippet3Points, setSnippet3Points] = useState<string>(defaultModeFormValues.snippet3Points);
+  const [bothBonusPoints, setBothBonusPoints] = useState<string>(defaultModeFormValues.bothBonusPoints);
+  const [wrongGuessPenalty, setWrongGuessPenalty] = useState<string>(defaultModeFormValues.wrongGuessPenalty);
+  const [requiredPointsToWin, setRequiredPointsToWin] = useState<string>(defaultModeFormValues.requiredPointsToWin);
   const [saveAsPreset, setSaveAsPreset] = useState<boolean>(false);
   const [newPresetName, setNewPresetName] = useState<string>('');
   const [state, setState] = useState<GameState | null>(null);
+  const stateRef = useRef<GameState | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [runtimeTestMode, setRuntimeTestMode] = useState<boolean>(false);
   const [youtubeApiConfigured, setYoutubeApiConfigured] = useState<boolean>(false);
@@ -153,169 +151,115 @@ export function HostPage() {
     }
   };
 
-  const providerKeyByType: Record<SourceType, string> = {
-    'youtube-playlist': 'youtube_playlist',
-    'spotify-playlist': 'spotify_playlist',
-    'local-folder': 'local_files',
-  };
-
   const apiBase = import.meta.env.VITE_API_BASE ?? 'http://localhost:8000/api';
 
   const localCurrentSong = localSongIndex === null ? null : localSongs[localSongIndex % localSongs.length];
   const localCurrentSource =
     localSongIndex === null || localSources.length === 0 ? null : localSources[localSongIndex % localSources.length];
 
-  const applyPresetToForm = (preset: GameModePresetState) => {
-    const audioRule = preset.round_rules.find((rule) => rule.kind === 'audio');
-    const videoRule = preset.round_rules.find((rule) => rule.kind === 'video');
-    const lyricsRule = preset.round_rules.find((rule) => rule.kind === 'lyrics');
-
-    setAudioEnabled(Boolean(audioRule));
-    setVideoEnabled(Boolean(videoRule));
-    setLyricsEnabled(Boolean(lyricsRule));
-    setAudioEverySongs(audioRule ? String(audioRule.every_n_songs) : '0');
-    setVideoEverySongs(videoRule ? String(videoRule.every_n_songs) : '0');
-    setLyricsEverySongs(lyricsRule ? String(lyricsRule.every_n_songs) : '0');
-    setReleaseYearFrom(
-      typeof preset.filters.release_year_from === 'number' ? String(preset.filters.release_year_from) : '',
-    );
-    setReleaseYearTo(typeof preset.filters.release_year_to === 'number' ? String(preset.filters.release_year_to) : '');
-    setLanguage(preset.filters.language ?? '');
-    setSnippet1Duration(String(preset.stage_durations[0] ?? LOCAL_STAGE_DURATIONS_DEFAULT[0]));
-    setSnippet2Duration(String(preset.stage_durations[1] ?? LOCAL_STAGE_DURATIONS_DEFAULT[1]));
-    setSnippet3Duration(String(preset.stage_durations[2] ?? LOCAL_STAGE_DURATIONS_DEFAULT[2]));
-    setSnippet1Points(String(preset.stage_points[0] ?? LOCAL_STAGE_POINTS[0]));
-    setSnippet2Points(String(preset.stage_points[1] ?? LOCAL_STAGE_POINTS[1]));
-    setSnippet3Points(String(preset.stage_points[2] ?? LOCAL_STAGE_POINTS[2]));
-    setBothBonusPoints(String(preset.bonus_points_both ?? LOCAL_BOTH_BONUS_POINTS));
-    setWrongGuessPenalty(String(preset.wrong_guess_penalty ?? LOCAL_WRONG_GUESS_PENALTY));
-    setRequiredPointsToWin(String(preset.required_points_to_win ?? LOCAL_REQUIRED_POINTS_TO_WIN));
+  const modeFormValues: ModeFormValues = {
+    audioEnabled,
+    videoEnabled,
+    lyricsEnabled,
+    audioEverySongs,
+    videoEverySongs,
+    lyricsEverySongs,
+    releaseYearFrom,
+    releaseYearTo,
+    language,
+    snippet1Duration,
+    snippet2Duration,
+    snippet3Duration,
+    snippet1Points,
+    snippet2Points,
+    snippet3Points,
+    bothBonusPoints,
+    wrongGuessPenalty,
+    requiredPointsToWin,
   };
 
-  const activeRoundTypes = [
-    audioEnabled ? 'audio' : null,
-    videoEnabled ? 'video' : null,
-    lyricsEnabled ? 'lyrics' : null,
-  ].filter(Boolean) as string[];
+  const applyPresetToForm = (preset: GameModePresetState) => {
+    const nextValues = buildFormValuesFromPreset(preset);
+    setAudioEnabled(nextValues.audioEnabled);
+    setVideoEnabled(nextValues.videoEnabled);
+    setLyricsEnabled(nextValues.lyricsEnabled);
+    setAudioEverySongs(nextValues.audioEverySongs);
+    setVideoEverySongs(nextValues.videoEverySongs);
+    setLyricsEverySongs(nextValues.lyricsEverySongs);
+    setReleaseYearFrom(nextValues.releaseYearFrom);
+    setReleaseYearTo(nextValues.releaseYearTo);
+    setLanguage(nextValues.language);
+    setSnippet1Duration(nextValues.snippet1Duration);
+    setSnippet2Duration(nextValues.snippet2Duration);
+    setSnippet3Duration(nextValues.snippet3Duration);
+    setSnippet1Points(nextValues.snippet1Points);
+    setSnippet2Points(nextValues.snippet2Points);
+    setSnippet3Points(nextValues.snippet3Points);
+    setBothBonusPoints(nextValues.bothBonusPoints);
+    setWrongGuessPenalty(nextValues.wrongGuessPenalty);
+    setRequiredPointsToWin(nextValues.requiredPointsToWin);
+  };
 
-  const requiredPhoneRoundTypes = activeRoundTypes.filter((roundType) => ROUND_TYPES_REQUIRING_PHONES.has(roundType));
+  const requiredPhoneRoundTypes = getRequiredPhoneRoundTypes(modeFormValues);
   const modeRequiresPhoneConnections = requiredPhoneRoundTypes.length > 0;
 
-  const getConfiguredStageDurations = (): number[] => {
-    const values = [snippet1Duration, snippet2Duration, snippet3Duration].map((value) => Number.parseInt(value, 10));
-    return values.map((value, index) =>
-      Number.isFinite(value) && value > 0 ? value : LOCAL_STAGE_DURATIONS_DEFAULT[index],
-    );
-  };
-
-  const buildModeConfig = (): GameModeConfig => {
-    const stageDurations = [snippet1Duration, snippet2Duration, snippet3Duration].map((value) =>
-      Number.parseInt(value, 10),
-    );
-    const stagePoints = [snippet1Points, snippet2Points, snippet3Points].map((value) => Number.parseInt(value, 10));
-    const rules: { kind: string; every_n_songs: number }[] = [];
-
-    const audioEvery = Number.parseInt(audioEverySongs, 10);
-    const videoEvery = Number.parseInt(videoEverySongs, 10);
-    const lyricsEvery = Number.parseInt(lyricsEverySongs, 10);
-
-    if (audioEnabled && Number.isFinite(audioEvery) && audioEvery > 0) {
-      rules.push({ kind: 'audio', every_n_songs: audioEvery });
-    }
-    if (videoEnabled && Number.isFinite(videoEvery) && videoEvery > 0) {
-      rules.push({ kind: 'video', every_n_songs: videoEvery });
-    }
-    if (lyricsEnabled && Number.isFinite(lyricsEvery) && lyricsEvery > 0) {
-      rules.push({ kind: 'lyrics', every_n_songs: lyricsEvery });
-    }
-
-    if (rules.length < 1) {
-      throw new Error('Enable at least one round type by setting its frequency to 1 or higher.');
-    }
-
-    const fromYear = Number.parseInt(releaseYearFrom, 10);
-    const toYear = Number.parseInt(releaseYearTo, 10);
-    const bothBonus = Number.parseInt(bothBonusPoints, 10);
-    const wrongPenalty = Number.parseInt(wrongGuessPenalty, 10);
-    const winRequired = Number.parseInt(requiredPointsToWin, 10);
-
-    if (stageDurations.some((value) => !Number.isFinite(value) || value < 1)) {
-      throw new Error('Snippet durations must be whole numbers >= 1 second.');
-    }
-    if (stagePoints.some((value) => !Number.isFinite(value) || value < 0)) {
-      throw new Error('Points per snippet must be a whole number >= 0.');
-    }
-    if (!Number.isFinite(bothBonus) || bothBonus < 0) {
-      throw new Error('Bonus points for both must be a whole number >= 0.');
-    }
-    if (!Number.isFinite(wrongPenalty) || wrongPenalty < 0) {
-      throw new Error('Wrong-guess penalty must be a whole number >= 0.');
-    }
-    if (!Number.isFinite(winRequired) || winRequired < 1) {
-      throw new Error('Required points to win must be a whole number >= 1.');
-    }
-
-    return {
-      stage_durations: stageDurations,
-      stage_points: stagePoints,
-      bonus_points_both: bothBonus,
-      wrong_guess_penalty: wrongPenalty,
-      required_points_to_win: winRequired,
-      round_rules: rules,
-      filters: {
-        release_year_from: Number.isFinite(fromYear) ? fromYear : null,
-        release_year_to: Number.isFinite(toYear) ? toYear : null,
-        language: language.trim() || null,
-      },
-    };
-  };
-
   const openPresetCard = (preset: GameModePresetState) => {
-    setSelectedPresetKey(preset.key);
-    setModeDetailsEditable(false);
-    setModeDetailsTitle(preset.name);
+    const next = openPresetCardFlow({ preset });
+    setSelectedPresetKey(next.selectedPresetKey);
+    setModeDetailsEditable(next.modeDetailsEditable);
+    setModeDetailsTitle(next.modeDetailsTitle);
     applyPresetToForm(preset);
-    setSetupStep('mode-details');
+    setSetupStep(next.setupStep);
     setError(null);
   };
 
   const openCustomCard = () => {
-    const basePreset = gameModes.find((preset) => preset.key === selectedPresetKey) ?? gameModes[0] ?? null;
+    const next = openCustomCardFlow({
+      gameModes,
+      selectedPresetKey,
+    });
+    const basePreset = next.basePreset;
     if (basePreset) {
       applyPresetToForm(basePreset);
       setSelectedPresetKey(basePreset.key);
     }
-    setModeDetailsEditable(true);
-    setModeDetailsTitle('Custom Game');
-    setSetupStep('mode-details');
+    setModeDetailsEditable(next.modeDetailsEditable);
+    setModeDetailsTitle(next.modeDetailsTitle);
+    setSetupStep(next.setupStep);
     setError(null);
   };
 
   const ensurePhoneLobby = async () => {
-    if (state?.lobby_code) {
-      return;
-    }
-
-    const modeConfig = buildModeConfig();
-    const result = await api.createLobby({
-      host_name: hostName,
-      preset_key: selectedPresetKey,
-      mode_config: modeConfig,
-      save_as_preset: false,
-      preset_name: modeDetailsTitle || undefined,
+    const nextState = await ensurePhoneLobbyFlow({
+      state,
+      hostName,
+      selectedPresetKey,
+      modeDetailsTitle,
+      modeFormValues,
     });
-    setState(result.data);
+    setState(nextState);
   };
 
   const continueToGameSetup = async () => {
-    setSetupStep('game-setup');
     try {
-      await ensurePhoneLobby();
+      const next = await continueToGameSetupFlow({
+        state,
+        hostName,
+        selectedPresetKey,
+        modeDetailsTitle,
+        modeFormValues,
+      });
+      setSetupStep(next.setupStep);
+      setState(next.state);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
   };
+
+  useEffect(() => {
+    stateRef.current = state;
+  }, [state]);
 
   useEffect(() => {
     if (!state?.lobby_code) return;
@@ -346,22 +290,15 @@ export function HostPage() {
   }, []);
 
   const saveCurrentPreset = async () => {
-    const name = newPresetName.trim();
-    if (!name) {
-      setError('Enter a preset name first.');
-      return;
-    }
-
     try {
-      const modeConfig = buildModeConfig();
-      const result = await api.createGameModePreset(name, modeConfig);
-      const savedPreset = result.data.preset;
-      setGameModes((previous) => {
-        const withoutDuplicate = previous.filter((item) => item.key !== savedPreset.key);
-        return [...withoutDuplicate, savedPreset];
+      const next = await saveCurrentPresetFlow({
+        presetName: newPresetName,
+        modeFormValues,
+        gameModes,
       });
-      setSelectedPresetKey(savedPreset.key);
-      applyPresetToForm(savedPreset);
+      setGameModes(next.gameModes);
+      setSelectedPresetKey(next.selectedPresetKey);
+      applyPresetToForm(next.savedPreset);
       setSaveAsPreset(false);
       setError(null);
     } catch (err) {
@@ -375,54 +312,63 @@ export function HostPage() {
       return;
     }
 
-    const names = setupTeams
-      .split(',')
-      .map((name) => name.trim())
-      .filter(Boolean);
-    if (names.length < 1) {
-      setError('Please enter at least one team name.');
-      return;
-    }
-
     const begin = async () => {
-      if (runtimeTestMode) {
-        setLocalSongs(MOCK_LOCAL_SONGS);
-      } else {
-        if (localSources.length < 1) {
-          throw new Error('Please add at least one source before starting in non-test mode.');
-        }
+      const songs = await buildSongsForLocalGame({
+        runtimeTestMode,
+        localSources,
+        mockSongs: MOCK_LOCAL_SONGS,
+        apiBase,
+      });
+      const requestedTeams = buildTeams(setupTeams);
+      const ensuredState = await ensurePhoneLobbyFlow({
+        state,
+        hostName,
+        selectedPresetKey,
+        modeDetailsTitle,
+        modeFormValues,
+      });
 
-        const sourceIds = localSources.map((source) => source.backendSourceId).filter(Boolean) as string[];
-        const result = await api.getIndexedTracks(sourceIds);
-        const dynamicSongs: LocalSong[] = result.data.tracks.map((track) => ({
-          title: track.title,
-          artist: track.artist,
-          sourceType:
-            track.provider_key === 'youtube_playlist'
-              ? 'youtube'
-              : track.provider_key === 'spotify_playlist'
-                ? 'spotify'
-                : 'local',
-          sourceValue: track.source_value,
-          snippetUrl: track.playback_url.startsWith('http') ? track.playback_url : `${apiBase}${track.playback_url}`,
-          durationSeconds: typeof track.duration_seconds === 'number' ? track.duration_seconds : undefined,
-          spotifyTrackId: track.provider_key === 'spotify_playlist' ? track.file_path : undefined,
-        }));
-
-        if (dynamicSongs.length < 1) {
-          throw new Error('No indexed tracks found. Add a source and sync/index before starting.');
-        }
-
-        setLocalSongs(dynamicSongs);
+      if (!ensuredState?.lobby_code) {
+        throw new Error('Could not create a lobby for authoritative scoring.');
       }
 
-      setLocalTeams(names.map((name, index) => ({ id: `local-${index + 1}`, name, score: 0 })));
+      let latestState = ensuredState;
+      const existingTeamNames = new Set(latestState.teams.map((team) => team.name.trim().toLowerCase()));
+      for (const [index, team] of requestedTeams.entries()) {
+        const normalizedName = team.name.trim().toLowerCase();
+        if (existingTeamNames.has(normalizedName)) {
+          continue;
+        }
+        const joinResult = await api.joinLobby(
+          latestState.lobby_code,
+          `Host Team ${index + 1}`,
+          team.name,
+        );
+        latestState = joinResult.data;
+        existingTeamNames.add(normalizedName);
+      }
+
+      setLocalSongs(songs);
+      setState(latestState);
+      
+      // Register media with backend for orchestration
+      const mediaForBackend = songs.map((song) => ({
+        title: song.title,
+        artist: song.artist,
+        source_id: song.sourceValue,
+        source_type: song.sourceType,
+        source_value: song.sourceValue,
+        snippet_url: song.snippetUrl,
+        duration_seconds: song.durationSeconds,
+        spotify_track_id: song.spotifyTrackId,
+      }));
+      await api.setupLocalMedia(latestState.lobby_code, mediaForBackend);
+      
       setLocalStarted(true);
       setLocalSongIndex(null);
       setLocalRevealed(false);
       setLastPlayedStageIndex(0);
       setHighestPlayedStageIndex(0);
-      setTeamRoundGuessState({});
       setError(null);
       setLocalMessage('Local game started. Click Next Song to begin a round.');
     };
@@ -433,62 +379,18 @@ export function HostPage() {
   };
 
   const addLocalSource = async () => {
-    if (!newSourceValue.trim()) {
-      setError('Please enter a source value before adding.');
-      return;
-    }
-
-    const sourceType = newSourceType;
-    const sourceValue = newSourceValue.trim();
-
-    if (sourceType === 'local-folder') {
-      if (!sourceValue || pendingLocalFileCount < 1) {
-        setError('Please choose a local folder first.');
-        return;
-      }
-
-      try {
-        const registered = await api.registerLocalSource(sourceValue);
-        const sourceState = registered.data.source;
-        const indexed = await api.runLocalSourceIndex(sourceState.id);
-
-        setLocalSources((previous) => [
-          ...previous,
-          {
-            id: `src-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-            type: sourceType,
-            value: sourceValue,
-            backendSourceId: sourceState.id,
-            importedCount: indexed.data.total_tracks,
-          },
-        ]);
-        setNewSourceValue('');
-        setPendingLocalFileCount(0);
-        setError(null);
-        return;
-      } catch (err) {
-        setError(err instanceof Error ? err.message : String(err));
-        return;
-      }
-    }
-
     try {
-      const registered = await api.registerSource(providerKeyByType[sourceType], sourceValue);
-      const sourceState = registered.data.source;
-      const synced = await api.runSourceSync(sourceState.id);
-      const importedCount = Number(synced.data.total_tracks ?? 0);
-
+      const source = await addSource({
+        sourceType: newSourceType,
+        sourceValue: newSourceValue,
+        pendingLocalFileCount,
+      });
       setLocalSources((previous) => [
         ...previous,
-        {
-          id: `src-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-          type: sourceType,
-          value: sourceValue,
-          backendSourceId: sourceState.id,
-          importedCount,
-        },
+        source,
       ]);
       setNewSourceValue('');
+      setPendingLocalFileCount(0);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -497,14 +399,6 @@ export function HostPage() {
 
   const updateLocalSource = (sourceId: string, patch: Partial<Pick<LocalSource, 'type' | 'value'>>) => {
     setLocalSources((previous) => previous.map((source) => (source.id === sourceId ? { ...source, ...patch } : source)));
-  };
-
-  const cleanupBackendSources = async (sourceIds: string[]) => {
-    if (sourceIds.length < 1) {
-      return;
-    }
-
-    await api.cleanupSources(sourceIds);
   };
 
   const removeLocalSource = async (sourceId: string) => {
@@ -524,132 +418,101 @@ export function HostPage() {
   };
 
   const onFolderFilesSelected = (event: ChangeEvent<HTMLInputElement>) => {
-    const files = event.target.files ? Array.from(event.target.files) : [];
-    if (files.length < 1) {
+    const selection = extractFolderSelection(event.target.files);
+    if (!selection) {
       return;
     }
 
-    const firstRelativePath = (files[0] as File & { webkitRelativePath?: string }).webkitRelativePath ?? '';
-    const folderName = firstRelativePath.includes('/') ? firstRelativePath.split('/')[0] : files[0].name;
-    setNewSourceValue(folderName || 'selected-folder');
-    setPendingLocalFileCount(files.length);
+    setNewSourceValue(selection.folderName);
+    setPendingLocalFileCount(selection.fileCount);
     setError(null);
   };
 
   const pickLocalFolder = async () => {
-    const windowWithDirectoryPicker = window as Window & {
-      showDirectoryPicker?: () => Promise<{ name: string }>;
-    };
-
-    if (windowWithDirectoryPicker.showDirectoryPicker) {
-      try {
-        const handle = await windowWithDirectoryPicker.showDirectoryPicker();
-        setNewSourceValue(handle.name);
-        setPendingLocalFileCount(1);
-        setError(null);
-        return;
-      } catch {
-        return;
-      }
+    const folderName = await pickLocalFolderName(window);
+    if (folderName) {
+      setNewSourceValue(folderName);
+      setPendingLocalFileCount(1);
+      setError(null);
+      return;
     }
 
     folderInputRef.current?.click();
   };
 
-  const updateLocalScore = (teamId: string, delta: number, reason: string) => {
-    let updatedTeamName: string | null = null;
-    let updatedScore = 0;
-    let winnerName: string | null = null;
-    const winTarget = Number.parseInt(requiredPointsToWin, 10);
-
-    setLocalTeams((previous) =>
-      previous.map((team) => {
-        if (team.id !== teamId) {
-          return team;
-        }
-
-        const nextScore = Math.max(0, team.score + delta);
-        updatedTeamName = team.name;
-        updatedScore = nextScore;
-        if (Number.isFinite(winTarget) && winTarget > 0 && nextScore >= winTarget && team.score < winTarget) {
-          winnerName = team.name;
-        }
-        return { ...team, score: nextScore };
-      }),
-    );
-
-    if (updatedTeamName) {
-      const direction = delta >= 0 ? '+' : '';
-      const winMessage = winnerName ? ` ${winnerName} reached ${winTarget} points and wins!` : '';
-      setLocalMessage(`${updatedTeamName}: ${reason} (${direction}${delta}) → ${updatedScore} pts.${winMessage}`);
-    }
-  };
-
   const getActiveSnippetPoints = (): number => {
-    const points = [snippet1Points, snippet2Points, snippet3Points].map((value) => Number.parseInt(value, 10));
-    const index = Math.max(0, Math.min(points.length - 1, highestPlayedStageIndex));
-    const selected = points[index];
-    return Number.isFinite(selected) ? selected : LOCAL_STAGE_POINTS[index];
+    return getActiveSnippetPointsFlow({
+      snippet1Points,
+      snippet2Points,
+      snippet3Points,
+      highestPlayedStageIndex,
+      fallbackPoints: LOCAL_STAGE_POINTS,
+    });
   };
 
-  const toggleTeamFact = (teamId: string, fact: 'artist' | 'title') => {
+  const toggleTeamFact = async (teamId: string, fact: 'artist' | 'title') => {
     if (!localCurrentSong) {
       setLocalMessage('No active song. Click Next Song first.');
       return;
     }
 
-    const factPoints = getActiveSnippetPoints();
-    const bothBonus = Math.max(0, Number.parseInt(bothBonusPoints, 10) || 0);
-
-    setTeamRoundGuessState((previous) => {
-      const current = previous[teamId] ?? { artistPoints: 0, titlePoints: 0, bonusPoints: 0 };
-      const next = { ...current };
-
-      const factKey = fact === 'artist' ? 'artistPoints' : 'titlePoints';
-      const otherFactKey = fact === 'artist' ? 'titlePoints' : 'artistPoints';
-      const wasSelected = current[factKey] > 0;
-
-      let delta = 0;
-      let reason = '';
-
-      if (wasSelected) {
-        delta -= current[factKey];
-        next[factKey] = 0;
-        reason = `${fact === 'artist' ? 'Artist' : 'Title'} deselected`;
-
-        if (current.bonusPoints > 0) {
-          delta -= current.bonusPoints;
-          next.bonusPoints = 0;
-          reason = `${reason} (-both bonus)`;
-        }
-      } else {
-        next[factKey] = factPoints;
-        delta += factPoints;
-        reason = `${fact === 'artist' ? 'Artist' : 'Title'} selected`;
-
-        if (next[otherFactKey] > 0 && current.bonusPoints < 1 && bothBonus > 0) {
-          next.bonusPoints = bothBonus;
-          delta += bothBonus;
-          reason = `${reason} + both bonus`;
-        }
-      }
-
-      if (delta === 0) {
-        return previous;
-      }
-
-      updateLocalScore(teamId, delta, reason);
-      return { ...previous, [teamId]: next };
-    });
-  };
-
-  const applyWrongGuessPenalty = (teamId: string) => {
-    const penalty = Math.max(0, Number.parseInt(wrongGuessPenalty, 10) || 0);
-    if (penalty < 1) {
-      setLocalMessage('Wrong-guess penalty is set to 0.');
+    const lobbyCode = stateRef.current?.lobby_code;
+    if (!lobbyCode) {
+      setError('Lobby code is missing. Restart setup to continue.');
       return;
     }
-    updateLocalScore(teamId, -penalty, 'Wrong guess');
+
+    try {
+      const result = await api.toggleRoundFact(lobbyCode, teamId, fact);
+      setState(result.data);
+      setLocalMessage(result.data.message ?? `Toggled ${fact}.`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  };
+
+  const applyWrongGuessPenalty = async (teamId: string) => {
+    if (!localCurrentSong) {
+      setLocalMessage('No active song. Click Next Song first.');
+      return;
+    }
+
+    const lobbyCode = stateRef.current?.lobby_code;
+    if (!lobbyCode) {
+      setError('Lobby code is missing. Restart setup to continue.');
+      return;
+    }
+
+    try {
+      const result = await api.applyWrongGuessPenalty(lobbyCode, teamId);
+      setState(result.data);
+      setLocalMessage(result.data.message ?? 'Wrong-guess penalty applied.');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  };
+
+  const ensureBackendRoundStage = async (targetStageIndex: number) => {
+    if (targetStageIndex < 1) {
+      return;
+    }
+
+    const lobbyCode = stateRef.current?.lobby_code;
+    if (!lobbyCode) {
+      return;
+    }
+
+    let currentStage = stateRef.current?.current_round?.stage_index ?? 0;
+    while (currentStage < targetStageIndex) {
+      const result = await api.nextStage(lobbyCode);
+      const nextState = result.data;
+      setState(nextState);
+      const nextStage = nextState.current_round?.stage_index;
+      if (typeof nextStage !== 'number' || nextStage <= currentStage) {
+        break;
+      }
+      currentStage = nextStage;
+    }
   };
 
   const playLocalSnippet = async (stageIndex: number) => {
@@ -663,8 +526,9 @@ export function HostPage() {
       }
 
       const startAtSeconds = snippetStartOffsets[stageIndex] ?? 0;
-      const stageDurations = getConfiguredStageDurations();
+      const stageDurations = getConfiguredStageDurations(modeFormValues);
       const snippetDuration = stageDurations[stageIndex] ?? LOCAL_STAGE_DURATIONS_DEFAULT[stageIndex];
+      await ensureBackendRoundStage(stageIndex);
 
       if (localCurrentSong.sourceType === 'spotify') {
         if (!localCurrentSong.spotifyTrackId) {
@@ -775,70 +639,32 @@ export function HostPage() {
     // Stop any currently playing audio before starting new round
     stopAllPlayback();
 
-    if (localSongs.length < 1) {
-      setLocalMessage('No songs available. Add and sync sources first.');
-      return;
-    }
-
     const begin = async () => {
-      const nextIndex = localSongIndex === null ? 0 : (localSongIndex + 1) % localSongs.length;
-      const nextSong = localSongs[nextIndex];
-      const songDuration = await resolveSongDuration(nextSong);
-      const stageDurations = getConfiguredStageDurations();
-      const starts = stageDurations.map((stageDuration) => {
-        const maxStart = Math.max(0, songDuration - stageDuration);
-        if (maxStart <= 0) {
-          return 0;
-        }
-        return Math.floor(Math.random() * (maxStart + 1));
-      });
+      const lobbyCode = stateRef.current?.lobby_code;
+      if (!lobbyCode) {
+        setError('Lobby code is missing. Restart setup to continue.');
+        return;
+      }
 
-      setSnippetStartOffsets(starts);
-      setLocalSongIndex(nextIndex);
+      const result = await api.nextLocalSong(lobbyCode);
+      const roundData = result.data;
+
+      setState(roundData.state);
+      setSnippetStartOffsets(roundData.snippet_start_offsets);
       setLocalRevealed(false);
       setLastPlayedStageIndex(0);
       setHighestPlayedStageIndex(0);
-      setTeamRoundGuessState({});
-      setLocalMessage('New song round started.');
+      setLocalMessage(roundData.message || 'New song round started.');
+      
+      // Update local song tracking based on backend song number
+      if (roundData.state?.current_round?.song_number) {
+        setLocalSongIndex((roundData.state.current_round.song_number - 1) % localSongs.length);
+      }
     };
 
     void begin().catch((err) => {
       setError(err instanceof Error ? err.message : String(err));
     });
-  };
-
-  const resolveSongDuration = async (song: LocalSong): Promise<number> => {
-    if (song.durationSeconds && song.durationSeconds > 0) {
-      return Math.floor(song.durationSeconds);
-    }
-
-    if (song.sourceType === 'youtube') {
-      return 120;
-    }
-
-    const audio = new Audio();
-    audio.preload = 'metadata';
-    audio.src = song.snippetUrl;
-
-    const duration = await new Promise<number>((resolve) => {
-      const cleanup = () => {
-        audio.onloadedmetadata = null;
-        audio.onerror = null;
-      };
-
-      audio.onloadedmetadata = () => {
-        const value = Number.isFinite(audio.duration) ? audio.duration : 0;
-        cleanup();
-        resolve(Math.max(0, Math.floor(value)));
-      };
-
-      audio.onerror = () => {
-        cleanup();
-        resolve(0);
-      };
-    });
-
-    return duration;
   };
 
   const getSourceInfo = (song: LocalSong, source: LocalSource | null) => {
@@ -869,19 +695,15 @@ export function HostPage() {
       setError(err instanceof Error ? err.message : String(err));
     });
 
-    setSetupStep('mode-cards');
-    setModeDetailsEditable(false);
-    setModeDetailsTitle('');
+    resetSetup();
     setState(null);
     setLocalSources([]);
     setLocalSongs([]);
-    setLocalTeams([]);
     setLocalStarted(false);
     setLocalSongIndex(null);
     setLocalRevealed(false);
     setLastPlayedStageIndex(0);
     setHighestPlayedStageIndex(0);
-    setTeamRoundGuessState({});
     setLocalMessage(null);
     setError(null);
   };
@@ -1155,18 +977,39 @@ export function HostPage() {
   }, []);
 
   const localRoundForPanel: RoundState | null = localCurrentSong
-    ? {
+    ? state?.current_round ?? {
         round_kind: 'audio',
         song_number: (localSongIndex ?? 0) + 1,
         stage_index: highestPlayedStageIndex,
         stage_duration_seconds:
-          getConfiguredStageDurations()[highestPlayedStageIndex] ?? LOCAL_STAGE_DURATIONS_DEFAULT[highestPlayedStageIndex],
+          getConfiguredStageDurations(modeFormValues)[highestPlayedStageIndex] ??
+          LOCAL_STAGE_DURATIONS_DEFAULT[highestPlayedStageIndex],
         points_available: getActiveSnippetPoints(),
         snippet_url: localCurrentSong.snippetUrl,
         can_guess: false,
         status: 'playing',
       }
     : null;
+
+  const backendRoundTeamStates =
+    ((state as (GameState & { round_team_states?: RoundTeamState[] }) | null)?.round_team_states ?? []);
+
+  type TeamRoundAction = {
+    artistPoints: number;
+    titlePoints: number;
+    bonusPoints: number;
+  };
+
+  const teamRoundGuessState: Record<string, TeamRoundAction> = Object.fromEntries(
+    backendRoundTeamStates.map((teamState: RoundTeamState) => [
+      teamState.team_id,
+      {
+        artistPoints: teamState.artist_points,
+        titlePoints: teamState.title_points,
+        bonusPoints: teamState.bonus_points,
+      },
+    ]),
+  );
 
   return (
     <main>
@@ -1452,6 +1295,7 @@ export function HostPage() {
           <p>
             Game mode: {modeDetailsTitle || (gameModes.find((preset) => preset.key === selectedPresetKey)?.name ?? selectedPresetKey)}
           </p>
+          <p>Gameplay always runs on one host screen.</p>
           <p>Phones: {modeRequiresPhoneConnections ? 'Required' : 'Optional'}</p>
           <label>
             Host name
@@ -1567,8 +1411,8 @@ export function HostPage() {
       )}
 
       {localStarted && (
-        <section className="single-tv-screen">
-          <p>Mode: Single TV</p>
+        <section className="host-screen">
+          <p>Mode: Host Screen</p>
 
           <div className="top-controls">
             <button onClick={() => playLocalSnippet(0)} disabled={!localCurrentSong}>
@@ -1624,10 +1468,10 @@ export function HostPage() {
             </p>
           )}
 
-          <Scoreboard teams={localTeams} />
+          <Scoreboard teams={state?.teams ?? []} />
           <section>
             <h3>Teams</h3>
-            {localTeams.map((team) => (
+            {(state?.teams ?? []).map((team) => (
               <div key={team.id} className="team-row">
                 <div className="team-label">{team.name}</div>
                 <div className="team-lane">

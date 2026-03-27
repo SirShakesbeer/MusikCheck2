@@ -22,6 +22,13 @@ export type RoundState = {
   status: string;
 };
 
+export type RoundTeamState = {
+  team_id: string;
+  artist_points: number;
+  title_points: number;
+  bonus_points: number;
+};
+
 export type GameState = {
   lobby_code: string;
   mode_key: string;
@@ -29,6 +36,7 @@ export type GameState = {
   teams: TeamState[];
   players: PlayerState[];
   current_round: RoundState | null;
+  round_team_states: RoundTeamState[];
   message?: string | null;
 };
 

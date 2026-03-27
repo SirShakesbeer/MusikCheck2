@@ -73,7 +73,7 @@ python scripts/index_local_library.py "D:/Music"
 - Shared components:
   - `Scoreboard`
   - `RoundPanel`
-- Source setup in Single-TV menu supports editable source list with backend ingestion preview
+- Source setup in the host menu supports editable source list with backend ingestion preview
 - `frontend/src/services/snippetPlayer.ts` defines a `SnippetPlayer` interface (current implementation: `HtmlAudioSnippetPlayer`) for easier future media-type players
 
 ## Preset-based Game Modes
@@ -88,7 +88,7 @@ To add a new round type later (for example `video`, `lyrics`, `instrumental`):
 ## Prototype Features Included
 
 - Pre-game menu before starting
-- Single-TV mode (default) with one mouse controls
+- One host-screen gameplay (default) with mouse controls
 - Per-team manual controls for `STOP`, add points, deduct points
 - Lobby creation
 - Team join via phone interface (optional mode)
@@ -101,8 +101,8 @@ To add a new round type later (for example `video`, `lyrics`, `instrumental`):
 The host screen now starts with a menu:
 
 - **Test mode toggle**: available on the host menu so placeholder mode can be enabled/disabled without code changes.
-- **Single TV (one mouse)**: all teams play on one screen with staged snippet rounds (start round, next stage, decreasing points). Host awards stage points or penalties with team buttons. No STOP mechanic in this mode.
-- **Phone Connections (optional)**: same round mechanics plus players can press STOP on phones; host screen shows who pressed STOP.
+- **Host Screen (one mouse)**: all teams play on one host screen with staged snippet rounds (start round, next stage, decreasing points). Host awards stage points or penalties with team buttons.
+- **Phone Connections**: optional by default, and required only when selected round types require phone participation.
 
 ## Run with Docker
 
@@ -195,7 +195,7 @@ npm run dev
 - fix UI placement
 - update point display
 - add point buttons
-- update graphics
+- update graphics, icons, colors, animations
 
 ### Finally
 

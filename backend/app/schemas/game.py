@@ -27,6 +27,44 @@ class GuessRequest(BaseModel):
     artist: str
 
 
+class TeamFactToggleRequest(BaseModel):
+    team_id: str
+    fact: str = Field(min_length=1, max_length=16)
+
+
+class TeamPenaltyRequest(BaseModel):
+    team_id: str
+
+
+class LocalMediaItem(BaseModel):
+    title: str
+    artist: str
+    source_id: str
+    source_type: str  # 'local' | 'youtube' | 'spotify'
+    source_value: str
+    snippet_url: str
+    duration_seconds: int | None = None
+    spotify_track_id: str | None = None
+
+
+class SetupLocalMediaRequest(BaseModel):
+    media_items: list[LocalMediaItem]
+
+
+class NextLocalSongResponse(BaseModel):
+    round_kind: str
+    song_number: int
+    stage_index: int
+    stage_duration_seconds: int
+    points_available: int
+    snippet_url: str
+    can_guess: bool
+    status: str
+    snippet_start_offsets: list[int]
+    media_title: str
+    media_artist: str
+
+
 class TeamState(BaseModel):
     id: str
     name: str
@@ -56,6 +94,13 @@ class RoundState(BaseModel):
     status: str
 
 
+class RoundTeamState(BaseModel):
+    team_id: str
+    artist_points: int
+    title_points: int
+    bonus_points: int
+
+
 class GameState(BaseModel):
     lobby_code: str
     mode_key: str
@@ -63,6 +108,7 @@ class GameState(BaseModel):
     teams: list[TeamState]
     players: list[PlayerState]
     current_round: RoundState | None
+    round_team_states: list[RoundTeamState] = []
     message: str | None = None
 
 

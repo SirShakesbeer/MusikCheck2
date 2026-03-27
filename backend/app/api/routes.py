@@ -35,10 +35,14 @@ from app.schemas.game import (
     CreateLobbyRequest,
     GuessRequest,
     JoinLobbyRequest,
+    NextLocalSongResponse,
     PlayerReadyRequest,
     RuntimeConfigState,
     RuntimeConfigUpdateRequest,
+    SetupLocalMediaRequest,
     StopRequest,
+    TeamFactToggleRequest,
+    TeamPenaltyRequest,
 )
 from app.schemas.game_mode import (
     CreateGameModePresetRequest,
@@ -497,6 +501,28 @@ async def submit_guess(code: str, payload: GuessRequest, db: Session = Depends(g
         raise HTTPException(status_code=400, detail=str(error)) from error
 
 
+@router.post("/lobbies/{code}/rounds/fact-toggle", response_model=ApiEnvelope)
+async def toggle_round_fact(code: str, payload: TeamFactToggleRequest, db: Session = Depends(get_db)):
+    try:
+        game_engine.toggle_team_fact(db, code, payload.team_id, payload.fact)
+        state = game_engine.get_state(db, code, message=f"Toggled {payload.fact}")
+        await ws_manager.broadcast(code, {"type": "state", "data": state.model_dump()})
+        return ApiEnvelope(data=state)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
+
+@router.post("/lobbies/{code}/rounds/wrong-guess-penalty", response_model=ApiEnvelope)
+async def apply_wrong_guess_penalty(code: str, payload: TeamPenaltyRequest, db: Session = Depends(get_db)):
+    try:
+        game_engine.apply_wrong_guess_penalty(db, code, payload.team_id)
+        state = game_engine.get_state(db, code, message="Wrong-guess penalty applied")
+        await ws_manager.broadcast(code, {"type": "state", "data": state.model_dump()})
+        return ApiEnvelope(data=state)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
+
 @router.post("/lobbies/{code}/rounds/next-stage", response_model=ApiEnvelope)
 async def next_stage(code: str, db: Session = Depends(get_db)):
     try:
@@ -507,6 +533,35 @@ async def next_stage(code: str, db: Session = Depends(get_db)):
         return ApiEnvelope(data=state)
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
+
+
+@router.post("/lobbies/{code}/setup-local-media")
+async def setup_local_media(code: str, payload: SetupLocalMediaRequest, db: Session = Depends(get_db)):
+    try:
+        media_dicts = [item.model_dump() for item in payload.media_items]
+        game_engine.setup_local_media(code, media_dicts)
+        return {"ok": True, "data": {"message": f"Registered {len(media_dicts)} media items"}}
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
+
+@router.post("/lobbies/{code}/rounds/next-local-song", response_model=dict)
+async def next_local_song(code: str, db: Session = Depends(get_db)):
+    try:
+        round_data = game_engine.next_local_song(db, code)
+        state = game_engine.get_state(db, code, message="New song round started")
+        await ws_manager.broadcast(code, {"type": "state", "data": state.model_dump()})
+        return {
+            "ok": True,
+            "data": {
+                **round_data,
+                "state": state,
+            },
+        }
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    except Exception as error:
+        raise HTTPException(status_code=500, detail=f"Failed to start next local song: {error}") from error
 
 
 @router.get("/lobbies/{code}", response_model=ApiEnvelope)

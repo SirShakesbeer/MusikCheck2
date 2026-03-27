@@ -20,32 +20,59 @@ import type {
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? 'http://localhost:8000/api';
 
+const RETRY_ATTEMPTS = 3;
+const RETRY_DELAY_MS = 250;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+function isTransientNetworkError(error: unknown): boolean {
+  return error instanceof TypeError;
+}
+
+async function requestJson<TResponse>(path: string, init: RequestInit): Promise<TResponse> {
+  let lastError: unknown = null;
+
+  for (let attempt = 1; attempt <= RETRY_ATTEMPTS; attempt += 1) {
+    try {
+      const response = await fetch(`${API_BASE}${path}`, init);
+
+      if (!response.ok) {
+        if (response.status >= 500 && attempt < RETRY_ATTEMPTS) {
+          await sleep(RETRY_DELAY_MS * attempt);
+          continue;
+        }
+
+        const errorText = await response.text();
+        const parsed = safeParseError(errorText);
+        throw new Error(parsed || `Request failed: ${response.status}`);
+      }
+
+      return response.json() as Promise<TResponse>;
+    } catch (error) {
+      lastError = error;
+      if (attempt < RETRY_ATTEMPTS && isTransientNetworkError(error)) {
+        await sleep(RETRY_DELAY_MS * attempt);
+        continue;
+      }
+      throw error;
+    }
+  }
+
+  throw (lastError instanceof Error ? lastError : new Error('Request failed'));
+}
+
 async function post<TResponse, TBody extends object>(path: string, body?: TBody): Promise<TResponse> {
-  const response = await fetch(`${API_BASE}${path}`, {
+  return requestJson<TResponse>(path, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: body ? JSON.stringify(body) : undefined,
   });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    const parsed = safeParseError(errorText);
-    throw new Error(parsed || `Request failed: ${response.status}`);
-  }
-
-  return response.json() as Promise<TResponse>;
 }
 
 async function get<TResponse>(path: string): Promise<TResponse> {
-  const response = await fetch(`${API_BASE}${path}`);
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    const parsed = safeParseError(errorText);
-    throw new Error(parsed || `Request failed: ${response.status}`);
-  }
-
-  return response.json() as Promise<TResponse>;
+  return requestJson<TResponse>(path, {});
 }
 
 function safeParseError(raw: string): string | null {
@@ -149,5 +176,23 @@ export const api = {
       title,
       artist,
     }),
+  toggleRoundFact: (code: string, teamId: string, fact: 'artist' | 'title') =>
+    post<ApiEnvelope, { team_id: string; fact: string }>(`/lobbies/${code}/rounds/fact-toggle`, {
+      team_id: teamId,
+      fact,
+    }),
+  applyWrongGuessPenalty: (code: string, teamId: string) =>
+    post<ApiEnvelope, { team_id: string }>(`/lobbies/${code}/rounds/wrong-guess-penalty`, {
+      team_id: teamId,
+    }),
+  setupLocalMedia: (code: string, mediaItems: any[]) =>
+    post<{ ok: boolean; data: any }, { media_items: any[] }>(`/lobbies/${code}/setup-local-media`, {
+      media_items: mediaItems,
+    }),
+  nextLocalSong: (code: string) =>
+    post<
+      { ok: boolean; data: any },
+      Record<string, never>
+    >(`/lobbies/${code}/rounds/next-local-song`, {}),
   nextStage: (code: string) => post<ApiEnvelope, Record<string, never>>(`/lobbies/${code}/rounds/next-stage`, {}),
 };

@@ -18,7 +18,11 @@ class WebSocketManager:
 
     async def broadcast(self, lobby_code: str, payload: dict) -> None:
         for ws in list(self._connections.get(lobby_code, [])):
-            await ws.send_json(payload)
+            try:
+                await ws.send_json(payload)
+            except Exception:
+                # Drop stale sockets so one broken client does not fail API requests.
+                self.disconnect(lobby_code, ws)
 
 
 ws_manager = WebSocketManager()

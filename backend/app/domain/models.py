@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -42,6 +42,53 @@ class Player(Base):
 
     lobby: Mapped[Lobby] = relationship(back_populates="players")
     team: Mapped["Team"] = relationship(back_populates="players")
+
+
+class LobbyRuntimeState(Base):
+    __tablename__ = "lobby_runtime_states"
+
+    lobby_id: Mapped[str] = mapped_column(String(36), ForeignKey("lobbies.id"), primary_key=True)
+    song_number: Mapped[int] = mapped_column(Integer, default=0)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class PlayerRuntimeState(Base):
+    __tablename__ = "player_runtime_states"
+
+    player_id: Mapped[str] = mapped_column(String(36), ForeignKey("players.id"), primary_key=True)
+    lobby_id: Mapped[str] = mapped_column(String(36), ForeignKey("lobbies.id"), index=True)
+    ready: Mapped[bool] = mapped_column(Boolean, default=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class ActiveRoundState(Base):
+    __tablename__ = "active_round_states"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    lobby_id: Mapped[str] = mapped_column(String(36), ForeignKey("lobbies.id"), unique=True, index=True)
+    media_source_id: Mapped[str] = mapped_column(String(128))
+    media_title: Mapped[str] = mapped_column(String(256))
+    media_artist: Mapped[str] = mapped_column(String(256))
+    media_path: Mapped[str] = mapped_column(String(2048))
+    round_kind: Mapped[str] = mapped_column(String(64))
+    song_number: Mapped[int] = mapped_column(Integer)
+    stage_index: Mapped[int] = mapped_column(Integer, default=0)
+    can_guess: Mapped[bool] = mapped_column(Boolean, default=False)
+    status: Mapped[str] = mapped_column(String(64), default="playing")
+    snippet_url: Mapped[str] = mapped_column(String(2048))
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class ActiveRoundTeamState(Base):
+    __tablename__ = "active_round_team_states"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    active_round_id: Mapped[str] = mapped_column(String(36), ForeignKey("active_round_states.id"), index=True)
+    team_id: Mapped[str] = mapped_column(String(36), ForeignKey("teams.id"), index=True)
+    artist_points: Mapped[int] = mapped_column(Integer, default=0)
+    title_points: Mapped[int] = mapped_column(Integer, default=0)
+    bonus_points: Mapped[int] = mapped_column(Integer, default=0)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
 class MediaSource(Base):
