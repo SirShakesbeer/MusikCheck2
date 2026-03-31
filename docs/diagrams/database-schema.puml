@@ -1,0 +1,150 @@
+@startuml database-schema
+hide methods
+hide stereotypes
+skinparam linetype ortho
+skinparam classAttributeIconSize 0
+
+title MusikCheck2 Database Schema
+
+entity "lobbies" as lobbies {
+  * id : uuid
+  --
+  code : varchar(8) <<unique,index>>
+  host_name : varchar(64)
+  mode_key : varchar(64)
+  created_at : datetime
+  expires_at : datetime
+}
+
+entity "teams" as teams {
+  * id : uuid
+  --
+  lobby_id : uuid <<fk,index>>
+  name : varchar(64)
+  score : int
+}
+
+entity "players" as players {
+  * id : uuid
+  --
+  lobby_id : uuid <<fk,index>>
+  team_id : uuid <<fk,nullable>>
+  name : varchar(64)
+}
+
+entity "lobby_runtime_states" as lobby_runtime_states {
+  * lobby_id : uuid <<pk,fk>>
+  --
+  song_number : int
+  mode_config : text
+  setup_teams : text
+  setup_mode_title : varchar(128)
+  spotify_connected : bool
+  updated_at : datetime
+}
+
+entity "player_runtime_states" as player_runtime_states {
+  * player_id : uuid <<pk,fk>>
+  --
+  lobby_id : uuid <<fk,index>>
+  ready : bool
+  updated_at : datetime
+}
+
+entity "active_round_states" as active_round_states {
+  * id : uuid
+  --
+  lobby_id : uuid <<fk,unique,index>>
+  media_source_id : varchar(128)
+  media_title : varchar(256)
+  media_artist : varchar(256)
+  media_path : varchar(2048)
+  round_kind : varchar(64)
+  song_number : int
+  stage_index : int
+  max_stage_reached : int
+  can_guess : bool
+  status : varchar(64)
+  snippet_url : varchar(2048)
+  playback_provider : varchar(64)
+  playback_ref : varchar(2048)
+  playback_token : int
+  track_duration_seconds : int
+  snippet_start_offsets : varchar(256)
+  updated_at : datetime
+}
+
+entity "active_round_team_states" as active_round_team_states {
+  * id : uuid
+  --
+  active_round_id : uuid <<fk,index>>
+  team_id : uuid <<fk,index>>
+  artist_points : int
+  title_points : int
+  bonus_points : int
+  artist_awarded_stage : int <<nullable>>
+  title_awarded_stage : int <<nullable>>
+  updated_at : datetime
+}
+
+entity "media_sources" as media_sources {
+  * id : uuid
+  --
+  provider_key : varchar(64) <<index>>
+  source_value : varchar(1024) <<unique>>
+  created_at : datetime
+  updated_at : datetime
+}
+
+entity "indexed_tracks" as indexed_tracks {
+  * id : uuid
+  --
+  source_id : uuid <<fk,index>>
+  file_path : varchar(2048) <<unique>>
+  title : varchar(256)
+  artist : varchar(256)
+  file_mtime : int
+  file_size : int
+  created_at : datetime
+  updated_at : datetime
+}
+
+entity "lobby_sources" as lobby_sources {
+  * id : uuid
+  --
+  lobby_id : uuid <<fk,index>>
+  source_id : uuid <<fk,index>>
+  source_type : varchar(64)
+  source_value : varchar(1024)
+  created_at : datetime
+}
+
+lobbies ||--o{ teams
+lobbies ||--o{ players
+lobbies ||--|| lobby_runtime_states
+lobbies ||--o{ lobby_sources
+lobbies ||--o| active_round_states
+
+teams ||--o{ players
+teams ||--o{ active_round_team_states
+
+players ||--|| player_runtime_states
+
+active_round_states ||--o{ active_round_team_states
+
+media_sources ||--o{ indexed_tracks
+media_sources ||--o{ lobby_sources
+
+note bottom of lobbies
+  TTL lifecycle:
+  expires_at = created_at + 24h
+  Expired lobbies are cleaned periodically.
+end note
+
+note right of lobby_sources
+  Per-lobby source mapping used by:
+  - setup restore
+  - lobby-scoped media selection
+end note
+
+@enduml
