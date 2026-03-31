@@ -80,6 +80,10 @@ class RoundState(BaseModel):
     stage_playback: StagePlaybackState
     can_guess: bool
     status: str
+    playback_token: int = 0
+    reveal_title: str | None = None
+    reveal_artist: str | None = None
+    reveal_source: str | None = None
 
 
 class RoundTeamState(BaseModel):

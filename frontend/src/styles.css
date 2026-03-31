@@ -77,13 +77,16 @@ button {
 .team-lane {
   position: relative;
   height: 42px;
+  overflow: hidden;
   border: 1px solid #d1d5db;
   border-radius: 999px;
   background: #f9fafb;
 }
 
 .team-box {
+  --team-progress: 0%;
   position: absolute;
+  left: clamp(0px, var(--team-progress), calc(100% - 72px));
   top: 3px;
   width: 72px;
   height: 34px;
@@ -94,6 +97,19 @@ button {
   align-items: center;
   justify-content: center;
   font-weight: 700;
+  transition: left 0.45s ease-out;
+}
+
+.reveal-panel {
+  margin-top: 0.5rem;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  background: #f9fafb;
+}
+
+.reveal-panel p {
+  margin: 0.15rem 0;
 }
 
 .bottom-row {

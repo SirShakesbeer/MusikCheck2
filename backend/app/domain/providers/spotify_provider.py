@@ -13,6 +13,17 @@ from app.domain.providers.base import MediaItem, MediaProvider
 class SpotifyPlaylistProvider(MediaProvider):
     key = "spotify_playlist"
 
+    def validate_source(self, source: str) -> bool:
+        return self._extract_playlist_id(source) is not None
+
+    def source_label(self, source: str) -> str | None:
+        normalized = (source or "").strip()
+        if not normalized:
+            return None
+        if normalized.startswith("http://") or normalized.startswith("https://") or normalized.startswith("spotify:"):
+            return None
+        return normalized
+
     def fetch_items(self, source: str) -> list[MediaItem]:
         playlist_id = self._extract_playlist_id(source)
         if not playlist_id:

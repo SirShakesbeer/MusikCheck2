@@ -11,7 +11,15 @@ class MediaIngestionService:
         provider = self._providers.get(provider_key)
         if not provider:
             raise ValueError(f"Unknown provider: {provider_key}")
+        if not provider.validate_source(source):
+            raise ValueError(f"Invalid source for provider: {provider_key}")
         return provider.fetch_items(source)
+
+    def source_label(self, provider_key: str, source: str) -> str | None:
+        provider = self._providers.get(provider_key)
+        if not provider:
+            return None
+        return provider.source_label(source)
 
     def get_provider(self, provider_key: str) -> MediaProvider | None:
         return self._providers.get(provider_key)

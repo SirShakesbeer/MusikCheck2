@@ -22,7 +22,7 @@ export function HostLobbyPage() {
   const [error, setError] = useState<string | null>(null);
   const [spotifyConnected, setSpotifyConnected] = useState<boolean>(false);
   const [spotifyDeviceId, setSpotifyDeviceId] = useState<string | null>(null);
-  const lastPlaybackKeyRef = useRef<string>('');
+  const lastPlaybackTokenRef = useRef<number>(0);
 
   const stopAllPlayback = () => {
     playbackDispatcher.stop();
@@ -63,22 +63,21 @@ export function HostLobbyPage() {
   useEffect(() => {
     const round = state?.current_round;
     if (!round) {
-      lastPlaybackKeyRef.current = '';
+      lastPlaybackTokenRef.current = 0;
       stopAllPlayback();
       return;
     }
-
-    const playbackKey = `${round.song_number}:${round.stage_index}:${round.status}:${round.playback_provider}:${round.playback_ref}:${round.stage_playback.start_at_seconds}`;
-    if (playbackKey === lastPlaybackKeyRef.current) {
-      return;
-    }
-    lastPlaybackKeyRef.current = playbackKey;
 
     if (round.status !== 'playing') {
       stopAllPlayback();
       return;
     }
 
+    if (round.playback_token === lastPlaybackTokenRef.current) {
+      return;
+    }
+
+    lastPlaybackTokenRef.current = round.playback_token;
     void playbackDispatcher.playRound(round).catch((err: unknown) => {
       setError(err instanceof Error ? err.message : String(err));
     });
@@ -112,7 +111,10 @@ export function HostLobbyPage() {
         if (targetStageIndex !== 0) {
           return;
         }
-        await onStartRound();
+        await api.startRound(code);
+        const result = await api.playRoundStage(code, 0);
+        setState(result.data);
+        setError(null);
         return;
       }
 
@@ -128,13 +130,14 @@ export function HostLobbyPage() {
     }
   };
 
-  const onFinishRound = async () => {
+  const onRevealRound = async () => {
     try {
       if (!state?.current_round || state.current_round.status === 'finished') {
         return;
       }
       const result = await api.finishRound(code);
       setState(result.data);
+      stopAllPlayback();
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -196,7 +199,7 @@ export function HostLobbyPage() {
         onStart={onStartRound}
         onPlaySnippet={onPlaySnippet}
         onNextRound={onNextRound}
-        onFinishRound={onFinishRound}
+        onRevealRound={onRevealRound}
       />
 
       <section>
@@ -241,7 +244,7 @@ export function HostLobbyPage() {
         )}
       </section>
 
-      <Scoreboard teams={state?.teams ?? []} />
+      <Scoreboard teams={state?.teams ?? []} maxPoints={state?.mode?.required_points_to_win ?? 1} />
 
       {error && <p>{error}</p>}
     </main>

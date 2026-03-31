@@ -5,10 +5,10 @@ type Props = {
   onStart: () => void;
   onPlaySnippet: (stageIndex: number) => void;
   onNextRound: () => void;
-  onFinishRound: () => void;
+  onRevealRound: () => void;
 };
 
-export function RoundPanel({ round, onStart, onPlaySnippet, onNextRound, onFinishRound }: Props) {
+export function RoundPanel({ round, onStart, onPlaySnippet, onNextRound, onRevealRound }: Props) {
   const isFinished = round?.status === 'finished';
   const stageCount = round?.snippet_start_offsets?.length || 3;
 
@@ -41,11 +41,18 @@ export function RoundPanel({ round, onStart, onPlaySnippet, onNextRound, onFinis
                 </button>
               );
             })}
-            <button onClick={onFinishRound} disabled={isFinished}>
-              Finish Round
+            <button onClick={onRevealRound} disabled={isFinished}>
+              Reveal
             </button>
             <button onClick={onNextRound}>Next Round</button>
           </div>
+          {isFinished && (round.reveal_artist || round.reveal_title || round.reveal_source) && (
+            <div className="reveal-panel">
+              <p><strong>Artist:</strong> {round.reveal_artist || 'Unknown'}</p>
+              <p><strong>Title:</strong> {round.reveal_title || 'Unknown'}</p>
+              <p><strong>Source:</strong> {round.reveal_source || round.playback_provider}</p>
+            </div>
+          )}
         </>
       )}
     </section>

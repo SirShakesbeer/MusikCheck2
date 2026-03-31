@@ -1,6 +1,5 @@
 import random
 import string
-
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -35,6 +34,21 @@ class GameEngine:
         self.media_processing = media_processing
         self.media_ingestion = media_ingestion
         self._lobby_modes: dict[str, GameModePreset] = {}
+        self._playback_tokens: dict[str, int] = {}
+
+    def _set_playback_token(self, lobby_code: str, token: int) -> int:
+        normalized = max(0, int(token))
+        self._playback_tokens[lobby_code] = normalized
+        return normalized
+
+    def _bump_playback_token(self, lobby_code: str) -> int:
+        current = self._playback_tokens.get(lobby_code, 0)
+        next_value = current + 1
+        self._playback_tokens[lobby_code] = next_value
+        return next_value
+
+    def _get_playback_token(self, lobby_code: str) -> int:
+        return self._playback_tokens.get(lobby_code, 0)
 
     def _generate_code(self, db: Session) -> str:
         while True:
@@ -135,6 +149,32 @@ class GameEngine:
                 return media_path.split("v=", 1)[1].split("&", 1)[0]
             return media_path.rsplit("/", 1)[-1]
         return media_path
+
+    def _provider_display_name(self, provider_key: str | None) -> str:
+        provider_labels = {
+            "local_files": "Local Files",
+            "local_folder": "Local Files",
+            "youtube_playlist": "YouTube",
+            "spotify_playlist": "Spotify",
+            "text_list": "Text List",
+        }
+        return provider_labels.get((provider_key or "").strip(), (provider_key or "Source").strip() or "Source")
+
+    def _resolve_reveal_source_label(self, db: Session, runtime: ActiveRoundState) -> str:
+        provider_label = self._provider_display_name(runtime.playback_provider)
+        indexed_track = db.query(IndexedTrack).filter(IndexedTrack.id == runtime.media_source_id).first()
+        if not indexed_track:
+            return provider_label
+
+        source = db.query(MediaSource).filter(MediaSource.id == indexed_track.source_id).first()
+        if not source:
+            return provider_label
+
+        source_name = self.media_ingestion.source_label(source.provider_key, source.source_value)
+        if source_name:
+            return f"{provider_label} | {source_name}"
+
+        return provider_label
 
     def _pick_round_media_selection(self, db: Session) -> dict:
         media_item = self._pick_round_media_item(db)
@@ -249,7 +289,7 @@ class GameEngine:
                 stage_index=0,
                 max_stage_reached=0,
                 can_guess=False,
-                status="playing",
+                status="ready",
                 snippet_url=processed.snippet_url,
                 playback_provider=selection["provider_key"],
                 playback_ref=selection["playback_ref"],
@@ -267,7 +307,7 @@ class GameEngine:
             active_round.stage_index = 0
             active_round.max_stage_reached = 0
             active_round.can_guess = False
-            active_round.status = "playing"
+            active_round.status = "ready"
             active_round.snippet_url = processed.snippet_url
             active_round.playback_provider = selection["provider_key"]
             active_round.playback_ref = selection["playback_ref"]
@@ -275,6 +315,8 @@ class GameEngine:
             active_round.snippet_start_offsets = self._serialize_offsets(snippet_offsets)
 
         db.query(ActiveRoundTeamState).filter(ActiveRoundTeamState.active_round_id == active_round.id).delete()
+
+        self._set_playback_token(lobby_code, 0)
 
         db.commit()
 
@@ -308,6 +350,7 @@ class GameEngine:
         round_state.max_stage_reached = max(current_max_stage, stage_index)
         round_state.can_guess = False
         round_state.status = "playing"
+        self._bump_playback_token(lobby_code)
         db.commit()
         return True
 
@@ -525,6 +568,14 @@ class GameEngine:
             snippet_offsets = self._deserialize_offsets(runtime.snippet_start_offsets, len(mode.stage_durations))
             stage_duration = mode.stage_durations[runtime.stage_index]
             start_at_seconds = snippet_offsets[runtime.stage_index] if runtime.stage_index < len(snippet_offsets) else 0
+            reveal_title: str | None = None
+            reveal_artist: str | None = None
+            reveal_source: str | None = None
+            if runtime.status == "finished":
+                reveal_title = runtime.media_title
+                reveal_artist = runtime.media_artist
+                reveal_source = self._resolve_reveal_source_label(db, runtime)
+
             current_round = RoundState(
                 round_kind=runtime.round_kind,
                 song_number=runtime.song_number,
@@ -544,6 +595,10 @@ class GameEngine:
                 },
                 can_guess=runtime.can_guess,
                 status=runtime.status,
+                playback_token=self._get_playback_token(lobby_code),
+                reveal_title=reveal_title,
+                reveal_artist=reveal_artist,
+                reveal_source=reveal_source,
             )
 
             team_state_rows = (

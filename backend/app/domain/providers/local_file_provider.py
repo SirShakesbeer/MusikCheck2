@@ -6,6 +6,15 @@ from app.domain.providers.base import MediaItem, MediaProvider
 class LocalFileProvider(MediaProvider):
     key = "local_files"
 
+    def validate_source(self, source: str) -> bool:
+        source_path = Path((source or "").strip())
+        return source_path.exists() and source_path.is_dir()
+
+    def source_label(self, source: str) -> str | None:
+        source_path = Path((source or "").strip())
+        name = source_path.name.strip()
+        return name or None
+
     def fetch_items(self, source: str) -> list[MediaItem]:
         root = Path(source)
         items: list[MediaItem] = []

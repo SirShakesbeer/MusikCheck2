@@ -30,6 +30,10 @@ export type RoundState = {
   };
   can_guess: boolean;
   status: string;
+  playback_token: number;
+  reveal_title?: string | null;
+  reveal_artist?: string | null;
+  reveal_source?: string | null;
 };
 
 export type RoundTeamState = {

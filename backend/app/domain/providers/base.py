@@ -15,6 +15,12 @@ class MediaItem:
 class MediaProvider(ABC):
     key: str
 
+    def validate_source(self, source: str) -> bool:
+        return bool((source or "").strip())
+
+    def source_label(self, source: str) -> str | None:
+        return None
+
     @abstractmethod
     def fetch_items(self, source: str) -> list[MediaItem]:
         raise NotImplementedError
