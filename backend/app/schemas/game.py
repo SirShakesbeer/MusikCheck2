@@ -7,6 +7,7 @@ class CreateLobbyRequest(BaseModel):
     host_name: str = Field(min_length=1, max_length=64)
     preset_key: str = Field(default="classic_audio", min_length=1)
     mode_config: GameModePresetConfig | None = None
+    teams: list[str] = []
     save_as_preset: bool = False
     preset_name: str | None = Field(default=None, max_length=64)
 
@@ -36,35 +37,6 @@ class TeamPenaltyRequest(BaseModel):
     team_id: str
 
 
-class LocalMediaItem(BaseModel):
-    title: str
-    artist: str
-    source_id: str
-    source_type: str  # 'local' | 'youtube' | 'spotify'
-    source_value: str
-    snippet_url: str
-    duration_seconds: int | None = None
-    spotify_track_id: str | None = None
-
-
-class SetupLocalMediaRequest(BaseModel):
-    media_items: list[LocalMediaItem]
-
-
-class NextLocalSongResponse(BaseModel):
-    round_kind: str
-    song_number: int
-    stage_index: int
-    stage_duration_seconds: int
-    points_available: int
-    snippet_url: str
-    can_guess: bool
-    status: str
-    snippet_start_offsets: list[int]
-    media_title: str
-    media_artist: str
-
-
 class TeamState(BaseModel):
     id: str
     name: str
@@ -83,13 +55,29 @@ class PlayerReadyRequest(BaseModel):
     ready: bool
 
 
+class PlayStageRequest(BaseModel):
+    stage_index: int = Field(ge=0)
+
+
+class StagePlaybackState(BaseModel):
+    stage_index: int
+    start_at_seconds: int
+    duration_seconds: int
+
+
 class RoundState(BaseModel):
     round_kind: str
     song_number: int
     stage_index: int
+    max_stage_reached: int
     stage_duration_seconds: int
     points_available: int
     snippet_url: str
+    playback_provider: str
+    playback_ref: str
+    track_duration_seconds: int
+    snippet_start_offsets: list[int]
+    stage_playback: StagePlaybackState
     can_guess: bool
     status: str
 
@@ -99,6 +87,10 @@ class RoundTeamState(BaseModel):
     artist_points: int
     title_points: int
     bonus_points: int
+    artist_awarded_stage: int | None = None
+    title_awarded_stage: int | None = None
+    artist_remove_locked: bool = False
+    title_remove_locked: bool = False
 
 
 class GameState(BaseModel):
@@ -124,3 +116,12 @@ class RuntimeConfigState(BaseModel):
 
 class RuntimeConfigUpdateRequest(BaseModel):
     test_mode: bool
+
+
+class SyncTeamsRequest(BaseModel):
+    teams: list[str]
+
+
+class LobbyReadinessState(BaseModel):
+    ready: bool
+    issues: list[str] = []

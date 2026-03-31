@@ -77,3 +77,13 @@ class IndexedTrackState(BaseModel):
 
 class ListIndexedTracksResponse(BaseModel):
     tracks: list[IndexedTrackState]
+
+
+class AddSourceOrchestratedRequest(BaseModel):
+    provider_key: str = Field(min_length=1)
+    source: str = Field(min_length=1)
+
+
+class AddSourceOrchestratedResponse(BaseModel):
+    source_id: str
+    total_tracks: int

@@ -35,31 +35,20 @@ export async function addSource(params: {
     if (params.pendingLocalFileCount < 1) {
       throw new Error('Please choose a local folder first.');
     }
-
-    const registered = await api.registerLocalSource(sourceValue);
-    const sourceState = registered.data.source;
-    const indexed = await api.runLocalSourceIndex(sourceState.id);
-
-    return {
-      id: buildSourceId(),
-      type: params.sourceType,
-      value: sourceValue,
-      backendSourceId: sourceState.id,
-      importedCount: indexed.data.total_tracks,
-    };
   }
 
-  const registered = await api.registerSource(providerKeyByType[params.sourceType], sourceValue);
-  const sourceState = registered.data.source;
-  const synced = await api.runSourceSync(sourceState.id);
-  const importedCount = Number(synced.data.total_tracks ?? 0);
+  // Use new orchestrated endpoint that handles register + index/sync together
+  const orchestrated = await api.addSourceOrchestrated(
+    providerKeyByType[params.sourceType],
+    sourceValue,
+  );
 
   return {
     id: buildSourceId(),
     type: params.sourceType,
     value: sourceValue,
-    backendSourceId: sourceState.id,
-    importedCount,
+    backendSourceId: orchestrated.data.source_id,
+    importedCount: orchestrated.data.total_tracks,
   };
 }
 

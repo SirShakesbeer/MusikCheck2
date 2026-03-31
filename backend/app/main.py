@@ -6,7 +6,7 @@ from sqlalchemy.exc import OperationalError
 
 from app.api.routes import router
 from app.core.config import settings
-from app.core.database import Base, SessionLocal, engine
+from app.core.database import Base, SessionLocal, apply_schema_patches, engine
 from app.core.ws_manager import ws_manager
 from app.services.service_container import game_engine
 
@@ -30,6 +30,7 @@ def startup() -> None:
     for _ in range(max_attempts):
         try:
             Base.metadata.create_all(bind=engine)
+            apply_schema_patches()
             return
         except OperationalError as error:
             last_error = error

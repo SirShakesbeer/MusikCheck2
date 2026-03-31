@@ -15,9 +15,19 @@ export type RoundState = {
   round_kind: string;
   song_number: number;
   stage_index: number;
+  max_stage_reached: number;
   stage_duration_seconds: number;
   points_available: number;
   snippet_url: string;
+  playback_provider: string;
+  playback_ref: string;
+  track_duration_seconds: number;
+  snippet_start_offsets: number[];
+  stage_playback: {
+    stage_index: number;
+    start_at_seconds: number;
+    duration_seconds: number;
+  };
   can_guess: boolean;
   status: string;
 };
@@ -27,6 +37,10 @@ export type RoundTeamState = {
   artist_points: number;
   title_points: number;
   bonus_points: number;
+  artist_awarded_stage?: number | null;
+  title_awarded_stage?: number | null;
+  artist_remove_locked?: boolean;
+  title_remove_locked?: boolean;
 };
 
 export type GameState = {
@@ -90,8 +104,19 @@ export type CreateLobbyPayload = {
   host_name: string;
   preset_key: string;
   mode_config?: GameModeConfig;
+  teams?: string[];
   save_as_preset?: boolean;
   preset_name?: string;
+};
+
+export type LobbyReadinessState = {
+  ready: boolean;
+  issues: string[];
+};
+
+export type LobbyReadinessEnvelope = {
+  ok: boolean;
+  data: LobbyReadinessState;
 };
 
 export type ApiEnvelope = {

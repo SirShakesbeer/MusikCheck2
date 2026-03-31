@@ -6,6 +6,7 @@ import type {
   GameModesEnvelope,
   IndexedTracksEnvelope,
   IngestPreviewEnvelope,
+  LobbyReadinessEnvelope,
   RegisterLocalSourceEnvelope,
   RuntimeConfigEnvelope,
   SpotifyActivateDeviceEnvelope,
@@ -95,6 +96,13 @@ export const api = {
       name,
       config,
     }),
+  validateGameMode: (config: GameModeConfig) =>
+    post<any, { config: GameModeConfig }>('/game-modes/validate', { config }),
+  addSourceOrchestrated: (providerKey: string, source: string) =>
+    post<any, { provider_key: string; source: string }>('/media/sources/add-orchestrated', {
+      provider_key: providerKey,
+      source,
+    }),
   getSpotifyAuthUrl: () => get<SpotifyAuthUrlEnvelope>('/spotify/auth-url'),
   getSpotifyStatus: () => get<SpotifyStatusEnvelope>('/spotify/status'),
   getSpotifyAccessToken: () => get<SpotifyAccessTokenEnvelope>('/spotify/access-token'),
@@ -154,6 +162,7 @@ export const api = {
     post<CleanupSourcesEnvelope, { source_ids: string[] }>('/media/sources/cleanup', {
       source_ids: sourceIds,
     }),
+  getLobbyState: (code: string) => get<ApiEnvelope>(`/lobbies/${code}`),
   joinLobby: (code: string, playerName: string, teamName: string) =>
     post<ApiEnvelope, { player_name: string; team_name: string }>(`/lobbies/${code}/join`, {
       player_name: playerName,
@@ -164,7 +173,18 @@ export const api = {
       player_id: playerId,
       ready,
     }),
+  syncLobbyTeams: (code: string, teams: string[]) =>
+    post<ApiEnvelope, { teams: string[] }>(`/lobbies/${code}/teams/sync`, {
+      teams,
+    }),
+  validateLobbyStart: (code: string) => get<LobbyReadinessEnvelope>(`/lobbies/${code}/validate-start`),
   startRound: (code: string) => post<ApiEnvelope, Record<string, never>>(`/lobbies/${code}/rounds/start`, {}),
+  nextRound: (code: string) => post<ApiEnvelope, Record<string, never>>(`/lobbies/${code}/rounds/next`, {}),
+  playRoundStage: (code: string, stageIndex: number) =>
+    post<ApiEnvelope, { stage_index: number }>(`/lobbies/${code}/rounds/play-stage`, {
+      stage_index: stageIndex,
+    }),
+  finishRound: (code: string) => post<ApiEnvelope, Record<string, never>>(`/lobbies/${code}/rounds/finish`, {}),
   stopRound: (code: string, teamId: string, playerName: string) =>
     post<ApiEnvelope, { team_id: string; player_name: string }>(`/lobbies/${code}/rounds/stop`, {
       team_id: teamId,
@@ -185,14 +205,5 @@ export const api = {
     post<ApiEnvelope, { team_id: string }>(`/lobbies/${code}/rounds/wrong-guess-penalty`, {
       team_id: teamId,
     }),
-  setupLocalMedia: (code: string, mediaItems: any[]) =>
-    post<{ ok: boolean; data: any }, { media_items: any[] }>(`/lobbies/${code}/setup-local-media`, {
-      media_items: mediaItems,
-    }),
-  nextLocalSong: (code: string) =>
-    post<
-      { ok: boolean; data: any },
-      Record<string, never>
-    >(`/lobbies/${code}/rounds/next-local-song`, {}),
   nextStage: (code: string) => post<ApiEnvelope, Record<string, never>>(`/lobbies/${code}/rounds/next-stage`, {}),
 };

@@ -129,6 +129,37 @@ class GameEngineScoringTests(unittest.TestCase):
             self.assertEqual(state.round_team_states[0].team_id, team_id)
             self.assertEqual(state.round_team_states[0].artist_points, 10)
 
+    def test_fact_scoring_uses_highest_stage_reached(self) -> None:
+        lobby_code, team_id = self._setup_round()
+
+        with self.SessionLocal() as db:
+            self.engine_service.play_stage(db, lobby_code, 2)
+            self.engine_service.play_stage(db, lobby_code, 0)
+            self.engine_service.toggle_team_fact(db, lobby_code, team_id, "artist")
+
+            team = db.query(Team).filter(Team.id == team_id).first()
+            self.assertIsNotNone(team)
+            self.assertEqual(team.score, 3)
+
+    def test_cannot_remove_fact_after_higher_stage_played(self) -> None:
+        lobby_code, team_id = self._setup_round()
+
+        with self.SessionLocal() as db:
+            self.engine_service.toggle_team_fact(db, lobby_code, team_id, "artist")
+            self.engine_service.play_stage(db, lobby_code, 1)
+
+            with self.assertRaises(ValueError):
+                self.engine_service.toggle_team_fact(db, lobby_code, team_id, "artist")
+
+            team = db.query(Team).filter(Team.id == team_id).first()
+            self.assertIsNotNone(team)
+            self.assertEqual(team.score, 10)
+
+            self.engine_service.toggle_team_fact(db, lobby_code, team_id, "title")
+            team = db.query(Team).filter(Team.id == team_id).first()
+            self.assertIsNotNone(team)
+            self.assertEqual(team.score, 18)
+
 
 if __name__ == "__main__":
     unittest.main()

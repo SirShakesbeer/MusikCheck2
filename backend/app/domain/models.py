@@ -73,9 +73,14 @@ class ActiveRoundState(Base):
     round_kind: Mapped[str] = mapped_column(String(64))
     song_number: Mapped[int] = mapped_column(Integer)
     stage_index: Mapped[int] = mapped_column(Integer, default=0)
+    max_stage_reached: Mapped[int] = mapped_column(Integer, default=0)
     can_guess: Mapped[bool] = mapped_column(Boolean, default=False)
     status: Mapped[str] = mapped_column(String(64), default="playing")
     snippet_url: Mapped[str] = mapped_column(String(2048))
+    playback_provider: Mapped[str] = mapped_column(String(64), default="local_files")
+    playback_ref: Mapped[str] = mapped_column(String(2048), default="")
+    track_duration_seconds: Mapped[int] = mapped_column(Integer, default=240)
+    snippet_start_offsets: Mapped[str] = mapped_column(String(256), default="0,0,0")
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
@@ -88,6 +93,8 @@ class ActiveRoundTeamState(Base):
     artist_points: Mapped[int] = mapped_column(Integer, default=0)
     title_points: Mapped[int] = mapped_column(Integer, default=0)
     bonus_points: Mapped[int] = mapped_column(Integer, default=0)
+    artist_awarded_stage: Mapped[int] = mapped_column(Integer, nullable=True, default=None)
+    title_awarded_stage: Mapped[int] = mapped_column(Integer, nullable=True, default=None)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 

@@ -6,6 +6,8 @@ from app.core.config import settings
 from app.core.database import get_db
 from app.core.ws_manager import ws_manager
 from app.schemas.media import (
+    AddSourceOrchestratedRequest,
+    AddSourceOrchestratedResponse,
     CleanupSourcesRequest,
     CleanupSourcesResponse,
     IndexedTrackState,
@@ -35,12 +37,13 @@ from app.schemas.game import (
     CreateLobbyRequest,
     GuessRequest,
     JoinLobbyRequest,
-    NextLocalSongResponse,
+    LobbyReadinessState,
+    PlayStageRequest,
     PlayerReadyRequest,
     RuntimeConfigState,
     RuntimeConfigUpdateRequest,
-    SetupLocalMediaRequest,
     StopRequest,
+    SyncTeamsRequest,
     TeamFactToggleRequest,
     TeamPenaltyRequest,
 )
@@ -50,6 +53,8 @@ from app.schemas.game_mode import (
     GameModeFiltersState,
     GameModePresetState,
     RoundTypeRuleState,
+    ValidateGameModeRequest,
+    ValidateGameModeResponse,
 )
 from app.services.game_mode_service import RoundTypeRule
 from app.services.service_container import (
@@ -160,6 +165,34 @@ def create_game_mode(payload: CreateGameModePresetRequest) -> dict:
         return {"ok": True, "data": data.model_dump()}
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
+
+
+@router.post("/game-modes/validate", response_model=dict)
+def validate_game_mode(payload: ValidateGameModeRequest) -> dict:
+    """Validate a game mode configuration without saving it"""
+    try:
+        from app.services.game_mode_service import GameModePreset, RoundTypeRule
+        
+        preset = GameModePreset(
+            key="temp",
+            name="temp-validation",
+            stage_durations=payload.config.stage_durations,
+            stage_points=payload.config.stage_points,
+            round_rules=[
+                RoundTypeRule(kind=rule.kind, every_n_songs=rule.every_n_songs)
+                for rule in payload.config.round_rules
+            ],
+            bonus_points_both=payload.config.bonus_points_both,
+            wrong_guess_penalty=payload.config.wrong_guess_penalty,
+            required_points_to_win=payload.config.required_points_to_win,
+            filters=payload.config.filters.model_dump() if payload.config.filters else {},
+        )
+        preset.validate()
+        response = ValidateGameModeResponse(valid=True, error=None)
+        return {"ok": True, "data": response.model_dump()}
+    except ValueError as error:
+        response = ValidateGameModeResponse(valid=False, error=str(error))
+        return {"ok": True, "data": response.model_dump()}
 
 
 @router.get("/providers")
@@ -343,6 +376,32 @@ def cleanup_sources(payload: CleanupSourcesRequest, db: Session = Depends(get_db
     return {"ok": True, "data": data.model_dump()}
 
 
+@router.post("/media/sources/add-orchestrated", response_model=dict)
+def add_source_orchestrated(payload: AddSourceOrchestratedRequest, db: Session = Depends(get_db)):
+    """Register a source and run index/sync in one orchestrated call"""
+    try:
+        # Register the source
+        registered = media_library_service.register_source(db, payload.provider_key, payload.source)
+        source_id = registered.id
+        
+        # Run index or sync based on provider type
+        if payload.provider_key == "local_files":
+            # For local sources, run index
+            media_library_service.index_local_source(db, source_id)
+        else:
+            # For remote sources, import and sync
+            items = media_ingestion_service.import_from_source(payload.provider_key, payload.source)
+            media_library_service.sync_remote_source(db, source_id, items)
+        
+        # Get final track count
+        total_tracks = media_library_service.get_source_track_count(db, source_id)
+        
+        data = AddSourceOrchestratedResponse(source_id=source_id, total_tracks=total_tracks)
+        return {"ok": True, "data": data.model_dump()}
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
+
 @router.get("/media/sources", response_model=dict)
 def list_media_sources(db: Session = Depends(get_db)):
     sources = media_library_service.list_sources(db)
@@ -438,7 +497,7 @@ async def create_lobby(payload: CreateLobbyRequest, db: Session = Depends(get_db
             if payload.save_as_preset:
                 custom_mode = game_mode_service.save_preset(custom_mode)
 
-        lobby = game_engine.create_lobby(db, payload.host_name, payload.preset_key, custom_mode)
+        lobby = game_engine.create_lobby(db, payload.host_name, payload.preset_key, custom_mode, payload.teams)
         state = game_engine.get_state(db, lobby.code, message="Lobby created")
         return ApiEnvelope(data=state)
     except ValueError as error:
@@ -467,6 +526,27 @@ async def update_player_ready(code: str, payload: PlayerReadyRequest, db: Sessio
         raise HTTPException(status_code=400, detail=str(error)) from error
 
 
+@router.post("/lobbies/{code}/teams/sync", response_model=ApiEnvelope)
+async def sync_lobby_teams(code: str, payload: SyncTeamsRequest, db: Session = Depends(get_db)):
+    try:
+        game_engine.sync_lobby_teams(db, code, payload.teams)
+        state = game_engine.get_state(db, code, message="Teams synced")
+        await ws_manager.broadcast(code, {"type": "state", "data": state.model_dump()})
+        return ApiEnvelope(data=state)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
+
+@router.get("/lobbies/{code}/validate-start", response_model=dict)
+def validate_lobby_start(code: str, db: Session = Depends(get_db)):
+    try:
+        readiness = game_engine.validate_lobby_ready_to_start(db, code)
+        data = LobbyReadinessState(ready=readiness["ready"], issues=readiness["issues"])
+        return {"ok": True, "data": data.model_dump()}
+    except ValueError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+
+
 @router.post("/lobbies/{code}/rounds/start", response_model=ApiEnvelope)
 async def start_round(code: str, db: Session = Depends(get_db)):
     try:
@@ -476,6 +556,39 @@ async def start_round(code: str, db: Session = Depends(get_db)):
         return ApiEnvelope(data=state)
     except ValueError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
+
+
+@router.post("/lobbies/{code}/rounds/next", response_model=ApiEnvelope)
+async def next_round(code: str, db: Session = Depends(get_db)):
+    try:
+        game_engine.start_round(db, code)
+        state = game_engine.get_state(db, code, message="Next round started")
+        await ws_manager.broadcast(code, {"type": "state", "data": state.model_dump()})
+        return ApiEnvelope(data=state)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
+
+@router.post("/lobbies/{code}/rounds/play-stage", response_model=ApiEnvelope)
+async def play_stage(code: str, payload: PlayStageRequest, db: Session = Depends(get_db)):
+    try:
+        game_engine.play_stage(db, code, payload.stage_index)
+        state = game_engine.get_state(db, code, message=f"Playing stage {payload.stage_index + 1}")
+        await ws_manager.broadcast(code, {"type": "state", "data": state.model_dump()})
+        return ApiEnvelope(data=state)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
+
+@router.post("/lobbies/{code}/rounds/finish", response_model=ApiEnvelope)
+async def finish_round(code: str, db: Session = Depends(get_db)):
+    try:
+        game_engine.finish_round(db, code)
+        state = game_engine.get_state(db, code, message="Round finished")
+        await ws_manager.broadcast(code, {"type": "state", "data": state.model_dump()})
+        return ApiEnvelope(data=state)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
 
 
 @router.post("/lobbies/{code}/rounds/stop", response_model=ApiEnvelope)
@@ -533,35 +646,6 @@ async def next_stage(code: str, db: Session = Depends(get_db)):
         return ApiEnvelope(data=state)
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
-
-
-@router.post("/lobbies/{code}/setup-local-media")
-async def setup_local_media(code: str, payload: SetupLocalMediaRequest, db: Session = Depends(get_db)):
-    try:
-        media_dicts = [item.model_dump() for item in payload.media_items]
-        game_engine.setup_local_media(code, media_dicts)
-        return {"ok": True, "data": {"message": f"Registered {len(media_dicts)} media items"}}
-    except ValueError as error:
-        raise HTTPException(status_code=400, detail=str(error)) from error
-
-
-@router.post("/lobbies/{code}/rounds/next-local-song", response_model=dict)
-async def next_local_song(code: str, db: Session = Depends(get_db)):
-    try:
-        round_data = game_engine.next_local_song(db, code)
-        state = game_engine.get_state(db, code, message="New song round started")
-        await ws_manager.broadcast(code, {"type": "state", "data": state.model_dump()})
-        return {
-            "ok": True,
-            "data": {
-                **round_data,
-                "state": state,
-            },
-        }
-    except ValueError as error:
-        raise HTTPException(status_code=400, detail=str(error)) from error
-    except Exception as error:
-        raise HTTPException(status_code=500, detail=f"Failed to start next local song: {error}") from error
 
 
 @router.get("/lobbies/{code}", response_model=ApiEnvelope)

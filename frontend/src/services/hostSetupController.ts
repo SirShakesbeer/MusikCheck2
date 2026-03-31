@@ -1,7 +1,5 @@
-import type { ModeFormValues } from './gameModeFormService';
-import { buildModeConfig } from './gameModeFormService';
 import { api } from './api';
-import type { GameModePresetState, GameState } from '../types';
+import type { GameModeConfig, GameModePresetState, GameState } from '../types';
 import type { SetupStep } from '../stores/hostSetupStore';
 
 export async function ensurePhoneLobby(params: {
@@ -9,17 +7,19 @@ export async function ensurePhoneLobby(params: {
   hostName: string;
   selectedPresetKey: string;
   modeDetailsTitle: string;
-  modeFormValues: ModeFormValues;
+  modeConfig: GameModeConfig;
+  teamNames: string[];
 }): Promise<GameState | null> {
   if (params.state?.lobby_code) {
-    return params.state;
+    const synced = await api.syncLobbyTeams(params.state.lobby_code, params.teamNames);
+    return synced.data;
   }
 
-  const modeConfig = buildModeConfig(params.modeFormValues);
   const result = await api.createLobby({
     host_name: params.hostName,
     preset_key: params.selectedPresetKey,
-    mode_config: modeConfig,
+    mode_config: params.modeConfig,
+    teams: params.teamNames,
     save_as_preset: false,
     preset_name: params.modeDetailsTitle || undefined,
   });
@@ -31,7 +31,8 @@ export async function continueToGameSetup(params: {
   hostName: string;
   selectedPresetKey: string;
   modeDetailsTitle: string;
-  modeFormValues: ModeFormValues;
+  modeConfig: GameModeConfig;
+  teamNames: string[];
 }): Promise<{ setupStep: SetupStep; state: GameState | null }> {
   const state = await ensurePhoneLobby(params);
   return {
@@ -42,7 +43,7 @@ export async function continueToGameSetup(params: {
 
 export async function saveCurrentPreset(params: {
   presetName: string;
-  modeFormValues: ModeFormValues;
+  modeConfig: GameModeConfig;
   gameModes: GameModePresetState[];
 }): Promise<{
   gameModes: GameModePresetState[];
@@ -54,8 +55,7 @@ export async function saveCurrentPreset(params: {
     throw new Error('Enter a preset name first.');
   }
 
-  const modeConfig = buildModeConfig(params.modeFormValues);
-  const result = await api.createGameModePreset(name, modeConfig);
+  const result = await api.createGameModePreset(name, params.modeConfig);
   const savedPreset = result.data.preset;
 
   const withoutDuplicate = params.gameModes.filter((item) => item.key !== savedPreset.key);

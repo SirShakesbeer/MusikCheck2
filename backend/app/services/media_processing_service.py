@@ -49,6 +49,9 @@ class MediaProcessingService:
         if media_item.media_path.startswith("/api/media/tracks/"):
             return media_item.media_path
 
+        if "open.spotify.com/track/" in media_item.media_path:
+            return media_item.media_path
+
         youtube_embed = self._youtube_embed_url(media_item.media_path, cache_key, random_start)
         if youtube_embed:
             return youtube_embed

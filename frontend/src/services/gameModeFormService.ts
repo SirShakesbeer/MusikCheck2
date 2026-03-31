@@ -123,31 +123,11 @@ export function buildModeConfig(values: ModeFormValues): GameModeConfig {
     rules.push({ kind: 'lyrics', every_n_songs: lyricsEvery });
   }
 
-  if (rules.length < 1) {
-    throw new Error('Enable at least one round type by setting its frequency to 1 or higher.');
-  }
-
   const fromYear = Number.parseInt(values.releaseYearFrom, 10);
   const toYear = Number.parseInt(values.releaseYearTo, 10);
   const bothBonus = Number.parseInt(values.bothBonusPoints, 10);
   const wrongPenalty = Number.parseInt(values.wrongGuessPenalty, 10);
   const winRequired = Number.parseInt(values.requiredPointsToWin, 10);
-
-  if (stageDurations.some((value) => !Number.isFinite(value) || value < 1)) {
-    throw new Error('Snippet durations must be whole numbers >= 1 second.');
-  }
-  if (stagePoints.some((value) => !Number.isFinite(value) || value < 0)) {
-    throw new Error('Points per snippet must be a whole number >= 0.');
-  }
-  if (!Number.isFinite(bothBonus) || bothBonus < 0) {
-    throw new Error('Bonus points for both must be a whole number >= 0.');
-  }
-  if (!Number.isFinite(wrongPenalty) || wrongPenalty < 0) {
-    throw new Error('Wrong-guess penalty must be a whole number >= 0.');
-  }
-  if (!Number.isFinite(winRequired) || winRequired < 1) {
-    throw new Error('Required points to win must be a whole number >= 1.');
-  }
 
   return {
     stage_durations: stageDurations,
@@ -162,4 +142,18 @@ export function buildModeConfig(values: ModeFormValues): GameModeConfig {
       language: values.language.trim() || null,
     },
   };
+}
+
+export async function validateGameModeConfig(values: ModeFormValues): Promise<{ valid: boolean; error?: string }> {
+  const { api } = await import('./api');
+  try {
+    const config = buildModeConfig(values);
+    const result = await api.validateGameMode(config);
+    return result.data;
+  } catch (err) {
+    return {
+      valid: false,
+      error: err instanceof Error ? err.message : 'Validation failed',
+    };
+  }
 }

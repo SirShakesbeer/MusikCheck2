@@ -42,3 +42,12 @@ class CreateGameModePresetRequest(BaseModel):
 
 class CreateGameModePresetResponse(BaseModel):
     preset: GameModePresetState
+
+
+class ValidateGameModeRequest(BaseModel):
+    config: GameModePresetConfig
+
+
+class ValidateGameModeResponse(BaseModel):
+    valid: bool
+    error: str | None = None
