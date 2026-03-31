@@ -231,4 +231,24 @@
   .game-launch-progress {
     @apply h-2 origin-left rounded-full bg-gradient-to-r from-mc-cyan via-sky-300 to-mc-lime;
   }
+
+  .finish-game-overlay {
+    @apply fixed inset-0 z-[75] flex items-center justify-center bg-black/70 px-4 backdrop-blur-sm;
+  }
+
+  .finish-game-card {
+    @apply w-full max-w-lg;
+  }
+
+  .finish-stats-grid {
+    @apply grid grid-cols-1 gap-2 rounded-xl border border-white/10 bg-black/20 p-3 sm:grid-cols-2;
+  }
+
+  .finish-team-list {
+    @apply grid gap-2;
+  }
+
+  .finish-team-row {
+    @apply flex items-center justify-between gap-2 rounded-xl border border-white/10 bg-black/20 px-3 py-2;
+  }
 }

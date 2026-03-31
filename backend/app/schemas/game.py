@@ -131,11 +131,35 @@ class RoundTeamState(BaseModel):
     title_remove_locked: bool = False
 
 
+class TeamFinishStatsState(BaseModel):
+    team_id: str
+    team_name: str
+    score: int
+    rank: int
+    is_winner: bool
+
+
+class FinishGameStatsState(BaseModel):
+    lobby_code: str
+    finished_at: str
+    required_points_to_win: int
+    total_songs_played: int
+    total_players: int
+    total_points_awarded: int
+    top_score: int
+    average_score: float
+    winner_team_ids: list[str]
+    winner_team_names: list[str]
+    teams: list[TeamFinishStatsState]
+
+
 class GameState(BaseModel):
     lobby_code: str
     mode_key: str
     mode: GameModePresetState
     teams: list[TeamState]
+    winner_team_ids: list[str] = []
+    has_winner_lock: bool = False
     players: list[PlayerState]
     current_round: RoundState | None
     round_team_states: list[RoundTeamState] = []
@@ -145,6 +169,11 @@ class GameState(BaseModel):
 class ApiEnvelope(BaseModel):
     ok: bool = True
     data: GameState
+
+
+class FinishGameEnvelope(BaseModel):
+    ok: bool = True
+    data: FinishGameStatsState
 
 
 class RuntimeConfigState(BaseModel):

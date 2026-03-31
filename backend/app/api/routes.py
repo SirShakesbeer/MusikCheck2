@@ -35,6 +35,7 @@ from app.schemas.spotify import (
 from app.schemas.game import (
     ApiEnvelope,
     CreateLobbyRequest,
+    FinishGameEnvelope,
     GuessRequest,
     JoinLobbyRequest,
     LobbySetupState,
@@ -758,6 +759,26 @@ async def next_stage(code: str, db: Session = Depends(get_db)):
         advanced = game_engine.next_stage(db, code)
         message = "Advanced stage" if advanced else "Round ended - no guess"
         state = game_engine.get_state(db, code, message=message)
+        await ws_manager.broadcast(code, {"type": "state", "data": state.model_dump()})
+        return ApiEnvelope(data=state)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
+
+@router.post("/lobbies/{code}/finish", response_model=FinishGameEnvelope)
+def finish_game(code: str, db: Session = Depends(get_db)):
+    try:
+        stats = game_engine.get_finish_game_stats(db, code)
+        return FinishGameEnvelope(data=stats)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
+
+@router.post("/lobbies/{code}/reset-game", response_model=ApiEnvelope)
+async def reset_game(code: str, db: Session = Depends(get_db)):
+    try:
+        game_engine.reset_game(db, code)
+        state = game_engine.get_state(db, code, message="Game reset")
         await ws_manager.broadcast(code, {"type": "state", "data": state.model_dump()})
         return ApiEnvelope(data=state)
     except ValueError as error:

@@ -52,6 +52,8 @@ export type GameState = {
   mode_key: string;
   mode: GameModePresetState;
   teams: TeamState[];
+  winner_team_ids: string[];
+  has_winner_lock: boolean;
   players: PlayerState[];
   current_round: RoundState | null;
   round_team_states: RoundTeamState[];
@@ -155,6 +157,33 @@ export type LobbyReadinessEnvelope = {
 export type ApiEnvelope = {
   ok: boolean;
   data: GameState;
+};
+
+export type TeamFinishStatsState = {
+  team_id: string;
+  team_name: string;
+  score: number;
+  rank: number;
+  is_winner: boolean;
+};
+
+export type FinishGameStatsState = {
+  lobby_code: string;
+  finished_at: string;
+  required_points_to_win: number;
+  total_songs_played: number;
+  total_players: number;
+  total_points_awarded: number;
+  top_score: number;
+  average_score: number;
+  winner_team_ids: string[];
+  winner_team_names: string[];
+  teams: TeamFinishStatsState[];
+};
+
+export type FinishGameEnvelope = {
+  ok: boolean;
+  data: FinishGameStatsState;
 };
 
 export type LobbySetupEnvelope = {

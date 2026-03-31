@@ -1,5 +1,6 @@
 import type {
   ApiEnvelope,
+  FinishGameEnvelope,
   CreateGameModePresetEnvelope,
   CreateLobbyPayload,
   GameModeConfig,
@@ -222,4 +223,6 @@ export const api = {
       team_id: teamId,
     }),
   nextStage: (code: string) => post<ApiEnvelope, Record<string, never>>(`/lobbies/${code}/rounds/next-stage`, {}),
+  finishGame: (code: string) => post<FinishGameEnvelope, Record<string, never>>(`/lobbies/${code}/finish`, {}),
+  resetGame: (code: string) => post<ApiEnvelope, Record<string, never>>(`/lobbies/${code}/reset-game`, {}),
 };

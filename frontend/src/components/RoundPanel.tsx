@@ -9,11 +9,24 @@ type Props = {
   onPlaySnippet: (stageIndex: number) => void;
   onNextRound: () => void;
   onRevealRound: () => void;
+  onFinishGame: () => void;
+  hasWinnerLock: boolean;
+  finishGameLoading?: boolean;
 };
 
-export function RoundPanel({ round, onStart, onPlaySnippet, onNextRound, onRevealRound }: Props) {
+export function RoundPanel({
+  round,
+  onStart,
+  onPlaySnippet,
+  onNextRound,
+  onRevealRound,
+  onFinishGame,
+  hasWinnerLock,
+  finishGameLoading = false,
+}: Props) {
   const isFinished = round?.status === 'finished';
   const stageCount = round?.snippet_start_offsets?.length || 3;
+  const mustRevealBeforeFinish = hasWinnerLock && !isFinished;
 
   const getButtonState = (targetStage: number): { disabled: boolean; label: string } => {
     if (!round) {
@@ -55,7 +68,12 @@ export function RoundPanel({ round, onStart, onPlaySnippet, onNextRound, onRevea
               {Array.from({ length: stageCount }, (_, stage) => stage).map((stage) => {
                 const state = getButtonState(stage);
                 return (
-                  <Button key={stage} disabled={state.disabled || isFinished} onClick={() => onPlaySnippet(stage)} variant="ghost">
+                  <Button
+                    key={stage}
+                    disabled={state.disabled || isFinished || mustRevealBeforeFinish}
+                    onClick={() => onPlaySnippet(stage)}
+                    variant="ghost"
+                  >
                     {state.label}
                   </Button>
                 );
@@ -63,8 +81,17 @@ export function RoundPanel({ round, onStart, onPlaySnippet, onNextRound, onRevea
               <Button onClick={onRevealRound} disabled={isFinished} variant="secondary">
                 Reveal
               </Button>
-              <Button onClick={onNextRound}>Next Round</Button>
+              {hasWinnerLock ? (
+                <Button onClick={onFinishGame} disabled={mustRevealBeforeFinish || finishGameLoading}>
+                  {finishGameLoading ? 'Loading Stats...' : 'Finish Game'}
+                </Button>
+              ) : (
+                <Button onClick={onNextRound}>Next Round</Button>
+              )}
             </div>
+            {mustRevealBeforeFinish && (
+              <p className="muted-copy mt-2">A team reached the maximum score. Reveal first, then finish or deduct points.</p>
+            )}
             <AnimatePresence>
               {isFinished && (round.reveal_artist || round.reveal_title || round.reveal_source) && (
                 <motion.div

@@ -21,6 +21,7 @@ from app.domain.snippets import SnippetSpec
 from app.domain.providers.base import MediaItem
 from app.schemas.game_mode import GameModeFiltersState, GameModePresetState, RoundTypeRuleState
 from app.schemas.game import GameState, PlayerState, RoundState, RoundTeamState, TeamState
+from app.schemas.game import FinishGameStatsState, TeamFinishStatsState
 from app.services.game_mode_service import GameModePreset, GameModeService, RoundTypeRule
 from app.services.media_processing_service import MediaProcessingService
 from app.services.media_ingestion_service import MediaIngestionService
@@ -411,6 +412,17 @@ class GameEngine:
         }
         return provider_labels.get((provider_key or "").strip(), (provider_key or "Source").strip() or "Source")
 
+    def _winner_team_ids(self, teams: list[Team], mode: GameModePreset) -> list[str]:
+        required_points = max(1, int(mode.required_points_to_win))
+        return [team.id for team in teams if int(team.score) >= required_points]
+
+    def _has_winner_lock(self, teams: list[Team], mode: GameModePreset) -> bool:
+        return len(self._winner_team_ids(teams, mode)) > 0
+
+    def _assert_no_winner_lock_for_positive_score_changes(self, teams: list[Team], mode: GameModePreset) -> None:
+        if self._has_winner_lock(teams, mode):
+            raise ValueError("Winner reached max points. Reveal and validate, or remove points before continuing.")
+
     def _resolve_reveal_source_label(self, db: Session, runtime: ActiveRoundState) -> str:
         provider_label = self._provider_display_name(runtime.playback_provider)
         indexed_track = db.query(IndexedTrack).filter(IndexedTrack.id == runtime.media_source_id).first()
@@ -516,6 +528,10 @@ class GameEngine:
     def start_round(self, db: Session, lobby_code: str) -> None:
         lobby = self._find_lobby(db, lobby_code)
         mode = self._get_lobby_mode(lobby, db)
+        teams = db.query(Team).filter(Team.lobby_id == lobby.id).all()
+        if self._has_winner_lock(teams, mode):
+            raise ValueError("Winner reached max points. Finish game or reduce points before starting next song.")
+
         runtime_state = self._get_or_create_lobby_runtime_state(db, lobby.id)
         song_number = runtime_state.song_number + 1
         runtime_state.song_number = song_number
@@ -687,6 +703,9 @@ class GameEngine:
             and round_state.media_artist.strip().lower() == artist.strip().lower()
         )
         if correct:
+            teams = db.query(Team).filter(Team.lobby_id == lobby.id).all()
+            self._assert_no_winner_lock_for_positive_score_changes(teams, mode)
+
             team = db.query(Team).filter(Team.id == team_id, Team.lobby_id == lobby.id).first()
             if not team:
                 raise ValueError("Team not found")
@@ -764,6 +783,9 @@ class GameEngine:
 
         max_stage_reached = int(round_state.max_stage_reached or round_state.stage_index)
 
+        teams = db.query(Team).filter(Team.lobby_id == lobby.id).all()
+        has_winner_lock = self._has_winner_lock(teams, mode)
+
         delta = 0
         if selected_points > 0:
             if awarded_stage is not None and max_stage_reached > int(awarded_stage):
@@ -780,6 +802,9 @@ class GameEngine:
                 delta -= current_bonus
                 team_round_state.bonus_points = 0
         else:
+            if has_winner_lock:
+                raise ValueError("Winner reached max points. Reveal and validate, or remove points before continuing.")
+
             delta += fact_points
             if normalized_fact == "artist":
                 team_round_state.artist_points = fact_points
@@ -816,6 +841,7 @@ class GameEngine:
         teams = db.query(Team).filter(Team.lobby_id == lobby.id).order_by(Team.name.asc()).all()
         players = db.query(Player).filter(Player.lobby_id == lobby.id).order_by(Player.name.asc()).all()
         mode = self._get_lobby_mode(lobby, db)
+        winner_team_ids = self._winner_team_ids(teams, mode)
 
         runtime = self._get_active_round(db, lobby.id)
         current_round = None
@@ -926,6 +952,8 @@ class GameEngine:
             mode_key=lobby.mode_key,
             mode=mode_state,
             teams=[TeamState(id=t.id, name=t.name, score=t.score) for t in teams],
+            winner_team_ids=winner_team_ids,
+            has_winner_lock=len(winner_team_ids) > 0,
             players=[
                 PlayerState(
                     id=p.id,
@@ -939,6 +967,85 @@ class GameEngine:
             round_team_states=round_team_states,
             message=message,
         )
+
+    def get_finish_game_stats(self, db: Session, lobby_code: str) -> FinishGameStatsState:
+        lobby = self._find_lobby(db, lobby_code)
+        mode = self._get_lobby_mode(lobby, db)
+        teams = db.query(Team).filter(Team.lobby_id == lobby.id).order_by(Team.score.desc(), Team.name.asc()).all()
+        if not teams:
+            raise ValueError("Cannot finish game without teams")
+
+        winner_team_ids = self._winner_team_ids(teams, mode)
+        if not winner_team_ids:
+            raise ValueError("Cannot finish game before a team reaches max points")
+
+        runtime = self._get_active_round(db, lobby.id)
+        if runtime and runtime.status != "finished":
+            raise ValueError("Reveal the current round before finishing the game")
+
+        players = db.query(Player).filter(Player.lobby_id == lobby.id).all()
+        runtime_state = self._get_or_create_lobby_runtime_state(db, lobby.id)
+
+        top_score = max(int(team.score) for team in teams)
+        total_points_awarded = sum(int(team.score) for team in teams)
+        average_score = round(total_points_awarded / len(teams), 2)
+        winner_team_id_set = set(winner_team_ids)
+
+        team_rankings: list[TeamFinishStatsState] = []
+        current_rank = 0
+        last_score: int | None = None
+        for index, team in enumerate(teams, start=1):
+            score = int(team.score)
+            if last_score is None or score != last_score:
+                current_rank = index
+                last_score = score
+
+            team_rankings.append(
+                TeamFinishStatsState(
+                    team_id=team.id,
+                    team_name=team.name,
+                    score=score,
+                    rank=current_rank,
+                    is_winner=team.id in winner_team_id_set,
+                )
+            )
+
+        winner_team_names = [team.name for team in teams if team.id in winner_team_id_set]
+
+        return FinishGameStatsState(
+            lobby_code=lobby.code,
+            finished_at=datetime.utcnow().isoformat() + "Z",
+            required_points_to_win=max(1, int(mode.required_points_to_win)),
+            total_songs_played=max(0, int(runtime_state.song_number)),
+            total_players=len(players),
+            total_points_awarded=total_points_awarded,
+            top_score=top_score,
+            average_score=average_score,
+            winner_team_ids=winner_team_ids,
+            winner_team_names=winner_team_names,
+            teams=team_rankings,
+        )
+
+    def reset_game(self, db: Session, lobby_code: str) -> None:
+        """Reset mutable game progress so the same lobby can start a fresh game."""
+        lobby = self._find_lobby(db, lobby_code)
+        runtime_state = self._get_or_create_lobby_runtime_state(db, lobby.id)
+
+        db.query(Team).filter(Team.lobby_id == lobby.id).update({"score": 0}, synchronize_session=False)
+
+        active_round = self._get_active_round(db, lobby.id)
+        if active_round:
+            db.query(ActiveRoundTeamState).filter(
+                ActiveRoundTeamState.active_round_id == active_round.id
+            ).delete(synchronize_session=False)
+            db.delete(active_round)
+
+        db.query(PlayerRuntimeState).filter(
+            PlayerRuntimeState.lobby_id == lobby.id
+        ).update({"ready": False}, synchronize_session=False)
+
+        runtime_state.song_number = 0
+        db.commit()
 
     def _find_lobby(self, db: Session, lobby_code: str) -> Lobby:
         lobby = db.query(Lobby).filter(Lobby.code == lobby_code).first()

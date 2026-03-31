@@ -160,6 +160,118 @@ class GameEngineScoringTests(unittest.TestCase):
             self.assertIsNotNone(team)
             self.assertEqual(team.score, 18)
 
+    def test_winner_lock_blocks_additional_positive_fact_changes(self) -> None:
+        lobby_code, team_id = self._setup_round()
+
+        with self.SessionLocal() as db:
+            team = db.query(Team).filter(Team.id == team_id).first()
+            assert team is not None
+            team.score = 20
+            db.commit()
+
+            with self.assertRaises(ValueError):
+                self.engine_service.toggle_team_fact(db, lobby_code, team_id, "artist")
+
+    def test_winner_lock_blocks_start_round_until_score_is_reduced(self) -> None:
+        lobby_code, team_id = self._setup_round()
+
+        with self.SessionLocal() as db:
+            team = db.query(Team).filter(Team.id == team_id).first()
+            assert team is not None
+            team.score = 20
+            db.commit()
+
+            with self.assertRaises(ValueError):
+                self.engine_service.start_round(db, lobby_code)
+
+            self.engine_service.apply_wrong_guess_penalty(db, lobby_code, team_id)
+            self.engine_service.start_round(db, lobby_code)
+
+            state = self.engine_service.get_state(db, lobby_code)
+            self.assertFalse(state.has_winner_lock)
+
+    def test_state_exposes_winner_lock_metadata(self) -> None:
+        lobby_code, team_id = self._setup_round()
+
+        with self.SessionLocal() as db:
+            team = db.query(Team).filter(Team.id == team_id).first()
+            assert team is not None
+            team.score = 21
+            db.commit()
+
+            state = self.engine_service.get_state(db, lobby_code)
+            self.assertTrue(state.has_winner_lock)
+            self.assertIn(team_id, state.winner_team_ids)
+
+    def test_finish_game_stats_requires_winner_lock(self) -> None:
+        lobby_code, _ = self._setup_round()
+
+        with self.SessionLocal() as db:
+            with self.assertRaises(ValueError):
+                self.engine_service.get_finish_game_stats(db, lobby_code)
+
+    def test_finish_game_stats_returns_ranked_payload(self) -> None:
+        with self.SessionLocal() as db:
+            lobby = self.engine_service.create_lobby(
+                db,
+                host_name="Host",
+                preset_key=self.preset.key,
+                mode_override=self.preset,
+            )
+            self.engine_service.join_team(db, lobby.code, player_name="Alice", team_name="Team A")
+            self.engine_service.join_team(db, lobby.code, player_name="Bob", team_name="Team B")
+
+            team_a = db.query(Team).filter(Team.lobby_id == lobby.id, Team.name == "Team A").first()
+            team_b = db.query(Team).filter(Team.lobby_id == lobby.id, Team.name == "Team B").first()
+            assert team_a is not None
+            assert team_b is not None
+
+            team_a.score = 22
+            team_b.score = 14
+            db.commit()
+
+            stats = self.engine_service.get_finish_game_stats(db, lobby.code)
+
+            self.assertEqual(stats.lobby_code, lobby.code)
+            self.assertEqual(stats.required_points_to_win, 20)
+            self.assertEqual(stats.total_songs_played, 0)
+            self.assertEqual(stats.top_score, 22)
+            self.assertEqual(stats.total_points_awarded, 36)
+            self.assertEqual(stats.total_players, 2)
+            self.assertEqual(stats.winner_team_names, ["Team A"])
+            self.assertEqual(len(stats.teams), 2)
+            self.assertEqual(stats.teams[0].team_name, "Team A")
+            self.assertEqual(stats.teams[0].rank, 1)
+            self.assertTrue(stats.teams[0].is_winner)
+            self.assertEqual(stats.teams[1].team_name, "Team B")
+            self.assertEqual(stats.teams[1].rank, 2)
+            self.assertFalse(stats.teams[1].is_winner)
+
+    def test_reset_game_clears_scores_and_round_progress(self) -> None:
+        lobby_code, team_id = self._setup_round()
+
+        with self.SessionLocal() as db:
+            self.engine_service.toggle_team_fact(db, lobby_code, team_id, "artist")
+            self.engine_service.finish_round(db, lobby_code)
+
+            state_before = self.engine_service.get_state(db, lobby_code)
+            self.assertIsNotNone(state_before.current_round)
+            self.assertGreaterEqual(state_before.current_round.song_number, 1)
+            self.assertGreaterEqual(state_before.teams[0].score, 1)
+
+            self.engine_service.reset_game(db, lobby_code)
+
+            state_after = self.engine_service.get_state(db, lobby_code)
+            self.assertIsNone(state_after.current_round)
+            self.assertEqual(state_after.round_team_states, [])
+            self.assertFalse(state_after.has_winner_lock)
+            for team in state_after.teams:
+                self.assertEqual(team.score, 0)
+
+            stats = self.engine_service.get_finish_game_stats
+            with self.assertRaises(ValueError):
+                stats(db, lobby_code)
+
 
 if __name__ == "__main__":
     unittest.main()
