@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime, timedelta
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -141,3 +141,15 @@ class IndexedTrack(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     source: Mapped[MediaSource] = relationship(back_populates="tracks")
+
+
+class SessionPlayedTrack(Base):
+    __tablename__ = "session_played_tracks"
+    __table_args__ = (
+        UniqueConstraint("lobby_id", "indexed_track_id", name="uq_session_played_track"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    lobby_id: Mapped[str] = mapped_column(String(36), ForeignKey("lobbies.id"), index=True)
+    indexed_track_id: Mapped[str] = mapped_column(String(36), ForeignKey("indexed_tracks.id"), index=True)
+    played_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)

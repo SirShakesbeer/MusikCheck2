@@ -2,6 +2,7 @@ import json
 import random
 import string
 from datetime import datetime, timedelta
+from sqlalchemy import and_, func
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -15,10 +16,12 @@ from app.domain.models import (
     MediaSource,
     Player,
     PlayerRuntimeState,
+    SessionPlayedTrack,
     Team,
 )
 from app.domain.snippets import SnippetSpec
 from app.domain.providers.base import MediaItem
+from app.domain.round_source_resolver import DefaultRoundTypeSourceResolver, RoundTypeSourceResolver
 from app.schemas.game_mode import GameModeFiltersState, GameModePresetState, RoundTypeRuleState
 from app.schemas.game import GameState, PlayerState, RoundState, RoundTeamState, TeamState
 from app.schemas.game import FinishGameStatsState, TeamFinishStatsState
@@ -33,10 +36,12 @@ class GameEngine:
         mode_service: GameModeService,
         media_processing: MediaProcessingService,
         media_ingestion: MediaIngestionService,
+        source_resolver: RoundTypeSourceResolver | None = None,
     ):
         self.mode_service = mode_service
         self.media_processing = media_processing
         self.media_ingestion = media_ingestion
+        self.source_resolver = source_resolver or DefaultRoundTypeSourceResolver()
         self._lobby_modes: dict[str, GameModePreset] = {}
 
     def _serialize_mode(self, mode: GameModePreset | None) -> str:
@@ -294,6 +299,7 @@ class GameEngine:
 
             db.query(ActiveRoundState).filter(ActiveRoundState.lobby_id == lobby.id).delete(synchronize_session=False)
             db.query(PlayerRuntimeState).filter(PlayerRuntimeState.lobby_id == lobby.id).delete(synchronize_session=False)
+            db.query(SessionPlayedTrack).filter(SessionPlayedTrack.lobby_id == lobby.id).delete(synchronize_session=False)
             db.query(Player).filter(Player.lobby_id == lobby.id).delete(synchronize_session=False)
             db.query(Team).filter(Team.lobby_id == lobby.id).delete(synchronize_session=False)
             db.query(LobbyRuntimeState).filter(LobbyRuntimeState.lobby_id == lobby.id).delete(synchronize_session=False)
@@ -439,8 +445,8 @@ class GameEngine:
 
         return provider_label
 
-    def _pick_round_media_selection(self, db: Session, lobby_id: str) -> dict:
-        media_item = self._pick_round_media_item(db, lobby_id)
+    def _pick_round_media_selection(self, db: Session, lobby_id: str, mode: GameModePreset, round_kind: str) -> dict:
+        media_item = self._pick_round_media_item(db, lobby_id, mode, round_kind)
         provider_key = "local_files"
         track_duration_seconds = 240
         playback_ref = media_item.media_path
@@ -537,7 +543,7 @@ class GameEngine:
         runtime_state.song_number = song_number
         round_kind = self.mode_service.pick_round_kind(mode, song_number)
 
-        selection = self._pick_round_media_selection(db, lobby.id)
+        selection = self._pick_round_media_selection(db, lobby.id, mode, round_kind)
         media_item = selection["media_item"]
         snippet_offsets = self._compute_snippet_offsets(selection["track_duration_seconds"], mode.stage_durations)
         snippet_spec = SnippetSpec(kind=round_kind, duration_seconds=mode.stage_durations[0], random_start=False)
@@ -630,7 +636,7 @@ class GameEngine:
         round_state.can_guess = False
         db.commit()
 
-    def _pick_round_media_item(self, db: Session, lobby_id: str) -> MediaItem:
+    def _pick_round_media_item(self, db: Session, lobby_id: str, mode: GameModePreset, round_kind: str) -> MediaItem:
         if settings.test_mode:
             return MediaItem(
                 source_id="placeholder-1",
@@ -639,39 +645,62 @@ class GameEngine:
                 media_path="placeholder",
             )
 
-        linked_source_ids = [
-            row.source_id
-            for row in db.query(LobbySource).filter(LobbySource.lobby_id == lobby_id).all()
-        ]
-        indexed_rows = (
-            db.query(IndexedTrack, MediaSource)
-            .join(MediaSource, IndexedTrack.source_id == MediaSource.id)
-            .filter(IndexedTrack.source_id.in_(linked_source_ids))
-            .all()
+        source_counts = self._eligible_source_counts(
+            db,
+            lobby_id,
+            mode,
+            round_kind,
+            exclude_played=True,
         )
-        playable_items: list[MediaItem] = []
-        for indexed_track, source in indexed_rows:
-            media_path: str | None = None
-            if source.provider_key == "youtube_playlist":
-                media_path = f"https://www.youtube.com/watch?v={indexed_track.file_path}"
-            elif source.provider_key == "spotify_playlist":
-                media_path = f"https://open.spotify.com/track/{indexed_track.file_path}"
-            elif source.provider_key in {"local_folder", "local_files"}:
-                media_path = f"/api/media/tracks/{indexed_track.id}/stream"
-            else:
-                continue
-
-            playable_items.append(
-                MediaItem(
-                    source_id=indexed_track.id,
-                    title=indexed_track.title,
-                    artist=indexed_track.artist,
-                    media_path=media_path,
-                )
+        if not source_counts:
+            self._clear_played_track_history(db, lobby_id)
+            source_counts = self._eligible_source_counts(
+                db,
+                lobby_id,
+                mode,
+                round_kind,
+                exclude_played=True,
             )
 
-        if playable_items:
-            return random.choice(playable_items)
+        if source_counts:
+            source_ids = [entry["source_id"] for entry in source_counts]
+            source_weights = [entry["track_count"] for entry in source_counts]
+            selected_source_id = random.choices(source_ids, weights=source_weights, k=1)[0]
+
+            selected_track = self._pick_track_for_source(
+                db,
+                lobby_id,
+                selected_source_id,
+                exclude_played=True,
+            )
+            if selected_track:
+                db.add(SessionPlayedTrack(lobby_id=lobby_id, indexed_track_id=selected_track.id))
+                source_lookup = {entry["source_id"]: entry for entry in source_counts}
+                return self._build_media_item_from_track(selected_track, source_lookup[selected_source_id]["provider_key"])
+
+            # If concurrent picks consumed this source, clear and retry once.
+            self._clear_played_track_history(db, lobby_id)
+            source_counts = self._eligible_source_counts(
+                db,
+                lobby_id,
+                mode,
+                round_kind,
+                exclude_played=True,
+            )
+            if source_counts:
+                source_ids = [entry["source_id"] for entry in source_counts]
+                source_weights = [entry["track_count"] for entry in source_counts]
+                selected_source_id = random.choices(source_ids, weights=source_weights, k=1)[0]
+                selected_track = self._pick_track_for_source(
+                    db,
+                    lobby_id,
+                    selected_source_id,
+                    exclude_played=True,
+                )
+                if selected_track:
+                    db.add(SessionPlayedTrack(lobby_id=lobby_id, indexed_track_id=selected_track.id))
+                    source_lookup = {entry["source_id"]: entry for entry in source_counts}
+                    return self._build_media_item_from_track(selected_track, source_lookup[selected_source_id]["provider_key"])
 
         if settings.youtube_default_playlist:
             items = self.media_ingestion.import_from_source("youtube_playlist", settings.youtube_default_playlist)
@@ -681,6 +710,100 @@ class GameEngine:
         raise ValueError(
             "No playable media available. Add/index a local, YouTube, or Spotify source, or enable TEST_MODE."
         )
+
+    def _eligible_source_counts(
+        self,
+        db: Session,
+        lobby_id: str,
+        mode: GameModePreset,
+        round_kind: str,
+        exclude_played: bool,
+    ) -> list[dict[str, str | int]]:
+        allowed_provider_keys = self.source_resolver.allowed_provider_keys(mode, round_kind)
+
+        query = (
+            db.query(
+                IndexedTrack.source_id.label("source_id"),
+                MediaSource.provider_key.label("provider_key"),
+                func.count(IndexedTrack.id).label("track_count"),
+            )
+            .join(LobbySource, LobbySource.source_id == IndexedTrack.source_id)
+            .join(MediaSource, MediaSource.id == IndexedTrack.source_id)
+            .filter(LobbySource.lobby_id == lobby_id)
+        )
+
+        if allowed_provider_keys is not None:
+            if len(allowed_provider_keys) < 1:
+                return []
+            query = query.filter(MediaSource.provider_key.in_(allowed_provider_keys))
+
+        if exclude_played:
+            query = query.outerjoin(
+                SessionPlayedTrack,
+                and_(
+                    SessionPlayedTrack.lobby_id == lobby_id,
+                    SessionPlayedTrack.indexed_track_id == IndexedTrack.id,
+                ),
+            ).filter(SessionPlayedTrack.id.is_(None))
+
+        rows = query.group_by(IndexedTrack.source_id, MediaSource.provider_key).all()
+        return [
+            {
+                "source_id": str(row.source_id),
+                "provider_key": str(row.provider_key),
+                "track_count": int(row.track_count),
+            }
+            for row in rows
+            if int(row.track_count) > 0
+        ]
+
+    def _pick_track_for_source(
+        self,
+        db: Session,
+        lobby_id: str,
+        source_id: str,
+        exclude_played: bool,
+    ) -> IndexedTrack | None:
+        track_query = db.query(IndexedTrack).filter(IndexedTrack.source_id == source_id)
+
+        if exclude_played:
+            track_query = track_query.outerjoin(
+                SessionPlayedTrack,
+                and_(
+                    SessionPlayedTrack.lobby_id == lobby_id,
+                    SessionPlayedTrack.indexed_track_id == IndexedTrack.id,
+                ),
+            ).filter(SessionPlayedTrack.id.is_(None))
+
+        available_count = track_query.count()
+        if available_count < 1:
+            return None
+
+        random_offset = random.randrange(available_count)
+        return track_query.offset(random_offset).limit(1).first()
+
+    def _build_media_item_from_track(self, track: IndexedTrack, provider_key: str) -> MediaItem:
+        media_path: str | None = None
+        if provider_key == "youtube_playlist":
+            media_path = f"https://www.youtube.com/watch?v={track.file_path}"
+        elif provider_key == "spotify_playlist":
+            media_path = f"https://open.spotify.com/track/{track.file_path}"
+        elif provider_key in {"local_folder", "local_files"}:
+            media_path = f"/api/media/tracks/{track.id}/stream"
+
+        if not media_path:
+            raise ValueError("No playable media URL available for selected track")
+
+        return MediaItem(
+            source_id=track.id,
+            title=track.title,
+            artist=track.artist,
+            media_path=media_path,
+        )
+
+    def _clear_played_track_history(self, db: Session, lobby_id: str) -> None:
+        db.query(SessionPlayedTrack).filter(SessionPlayedTrack.lobby_id == lobby_id).delete(synchronize_session=False)
+        db.flush()
 
     def stop_round(self, db: Session, lobby_code: str, team_id: str) -> None:
         lobby = self._find_lobby(db, lobby_code)
@@ -1043,6 +1166,9 @@ class GameEngine:
         db.query(PlayerRuntimeState).filter(
             PlayerRuntimeState.lobby_id == lobby.id
         ).update({"ready": False}, synchronize_session=False)
+        db.query(SessionPlayedTrack).filter(
+            SessionPlayedTrack.lobby_id == lobby.id
+        ).delete(synchronize_session=False)
 
         runtime_state.song_number = 0
         db.commit()

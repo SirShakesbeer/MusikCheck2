@@ -1,11 +1,12 @@
 import unittest
+from unittest.mock import patch
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from app.core.config import settings
 from app.core.database import Base
-from app.domain.models import ActiveRoundTeamState, Team
+from app.domain.models import ActiveRoundState, ActiveRoundTeamState, IndexedTrack, LobbySource, MediaSource, SessionPlayedTrack, Team
 from app.services.game_engine import GameEngine
 from app.services.game_mode_service import GameModePreset, RoundTypeRule
 from app.services.media_processing_service import MediaProcessingService
@@ -73,6 +74,44 @@ class GameEngineScoringTests(unittest.TestCase):
 
             self.engine_service.start_round(db, lobby.code)
             return lobby.code, team.id
+
+    def _add_source_with_tracks(
+        self,
+        db,
+        lobby_id: str,
+        provider_key: str,
+        source_value: str,
+        track_count: int,
+        track_prefix: str,
+    ) -> str:
+        source = MediaSource(provider_key=provider_key, source_value=source_value)
+        db.add(source)
+        db.flush()
+
+        db.add(
+            LobbySource(
+                lobby_id=lobby_id,
+                source_id=source.id,
+                source_type=provider_key,
+                source_value=source_value,
+            )
+        )
+        db.flush()
+
+        for index in range(track_count):
+            db.add(
+                IndexedTrack(
+                    source_id=source.id,
+                    file_path=f"{track_prefix}-{index}",
+                    title=f"{track_prefix} Title {index}",
+                    artist=f"{track_prefix} Artist",
+                    file_mtime=1,
+                    file_size=1000,
+                )
+            )
+
+        db.commit()
+        return source.id
 
     def test_toggle_fact_scoring_and_bonus(self) -> None:
         lobby_code, team_id = self._setup_round()
@@ -271,6 +310,174 @@ class GameEngineScoringTests(unittest.TestCase):
             stats = self.engine_service.get_finish_game_stats
             with self.assertRaises(ValueError):
                 stats(db, lobby_code)
+
+    def test_randomization_no_repeat_until_catalog_exhausted(self) -> None:
+        settings.test_mode = False
+
+        with self.SessionLocal() as db:
+            lobby = self.engine_service.create_lobby(
+                db,
+                host_name="Host",
+                preset_key=self.preset.key,
+                mode_override=self.preset,
+            )
+            self.engine_service.join_team(db, lobby.code, player_name="Alice", team_name="Team A")
+            self._add_source_with_tracks(
+                db,
+                lobby.id,
+                provider_key="local_files",
+                source_value="library://local-main",
+                track_count=3,
+                track_prefix="local",
+            )
+
+            seen_track_ids: set[str] = set()
+            for _ in range(3):
+                self.engine_service.start_round(db, lobby.code)
+                active_round = db.query(ActiveRoundState).filter(ActiveRoundState.lobby_id == lobby.id).first()
+                assert active_round is not None
+                self.assertNotIn(active_round.media_source_id, seen_track_ids)
+                seen_track_ids.add(active_round.media_source_id)
+
+            self.assertEqual(len(seen_track_ids), 3)
+
+            self.engine_service.start_round(db, lobby.code)
+            rollover_round = db.query(ActiveRoundState).filter(ActiveRoundState.lobby_id == lobby.id).first()
+            assert rollover_round is not None
+            self.assertIn(rollover_round.media_source_id, seen_track_ids)
+
+            played_count_after_rollover = (
+                db.query(SessionPlayedTrack)
+                .filter(SessionPlayedTrack.lobby_id == lobby.id)
+                .count()
+            )
+            self.assertEqual(played_count_after_rollover, 1)
+
+    def test_video_round_uses_only_compatible_sources(self) -> None:
+        settings.test_mode = False
+        video_mode = GameModePreset(
+            key="video_mode",
+            name="Video Only",
+            stage_durations=[2, 5, 8],
+            stage_points=[10, 6, 3],
+            round_rules=[RoundTypeRule(kind="video", every_n_songs=1)],
+            bonus_points_both=2,
+            wrong_guess_penalty=5,
+            required_points_to_win=20,
+            filters={},
+        )
+
+        with self.SessionLocal() as db:
+            lobby = self.engine_service.create_lobby(
+                db,
+                host_name="Host",
+                preset_key=video_mode.key,
+                mode_override=video_mode,
+            )
+            self.engine_service.join_team(db, lobby.code, player_name="Alice", team_name="Team A")
+
+            self._add_source_with_tracks(
+                db,
+                lobby.id,
+                provider_key="spotify_playlist",
+                source_value="spotify://playlist/video-test",
+                track_count=40,
+                track_prefix="spotify",
+            )
+            self._add_source_with_tracks(
+                db,
+                lobby.id,
+                provider_key="youtube_playlist",
+                source_value="youtube://playlist/video-test",
+                track_count=10,
+                track_prefix="youtube",
+            )
+
+            self.engine_service.start_round(db, lobby.code)
+            state = self.engine_service.get_state(db, lobby.code)
+            assert state.current_round is not None
+            self.assertEqual(state.current_round.round_kind, "video")
+            self.assertEqual(state.current_round.playback_provider, "youtube_playlist")
+
+    def test_weighted_randomization_uses_source_track_counts(self) -> None:
+        settings.test_mode = False
+
+        with self.SessionLocal() as db:
+            lobby = self.engine_service.create_lobby(
+                db,
+                host_name="Host",
+                preset_key=self.preset.key,
+                mode_override=self.preset,
+            )
+
+            self._add_source_with_tracks(
+                db,
+                lobby.id,
+                provider_key="spotify_playlist",
+                source_value="spotify://playlist/main",
+                track_count=20,
+                track_prefix="spotify",
+            )
+            self._add_source_with_tracks(
+                db,
+                lobby.id,
+                provider_key="youtube_playlist",
+                source_value="youtube://playlist/main",
+                track_count=80,
+                track_prefix="youtube",
+            )
+
+            mode = self.engine_service._get_lobby_mode(lobby, db)
+            captured_weights: list[int] = []
+
+            def _capture_choices(population, weights, k):
+                captured_weights.extend(int(value) for value in weights)
+                return [population[0]]
+
+            with patch("app.services.game_engine.random.choices", side_effect=_capture_choices):
+                self.engine_service._pick_round_media_item(db, lobby.id, mode, "audio")
+
+            self.assertEqual(sorted(captured_weights), [20, 80])
+
+    def test_randomization_scales_for_large_catalog(self) -> None:
+        settings.test_mode = False
+
+        with self.SessionLocal() as db:
+            lobby = self.engine_service.create_lobby(
+                db,
+                host_name="Host",
+                preset_key=self.preset.key,
+                mode_override=self.preset,
+            )
+            self.engine_service.join_team(db, lobby.code, player_name="Alice", team_name="Team A")
+
+            source_count = 40
+            tracks_per_source = 60
+            for source_index in range(source_count):
+                self._add_source_with_tracks(
+                    db,
+                    lobby.id,
+                    provider_key="local_files",
+                    source_value=f"library://bulk-{source_index}",
+                    track_count=tracks_per_source,
+                    track_prefix=f"bulk-{source_index}",
+                )
+
+            mode = self.engine_service._get_lobby_mode(lobby, db)
+            counts = self.engine_service._eligible_source_counts(
+                db,
+                lobby.id,
+                mode,
+                "audio",
+                exclude_played=True,
+            )
+            self.assertEqual(len(counts), source_count)
+            self.assertEqual(sum(int(item["track_count"]) for item in counts), source_count * tracks_per_source)
+
+            self.engine_service.start_round(db, lobby.code)
+            state = self.engine_service.get_state(db, lobby.code)
+            assert state.current_round is not None
+            self.assertEqual(state.current_round.round_kind, "audio")
 
 
 if __name__ == "__main__":

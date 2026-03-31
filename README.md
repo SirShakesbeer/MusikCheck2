@@ -527,8 +527,6 @@ end note
 ### gameplay
 
 - Add additional mode plugins (`music_video`, `lyrics`, `instrumental`, `speed round`, `STRÄWKCÜR`) (ffmpeg audio/video/frames extraction)
-- fix randomization, ensure cross source randomization
-- create persistance of user info across sessions (settings, user created gamemodes, highscores, connected local databases)
 - add a local database ingestion tool that can be connected in the ui
 - adjust point system to be more similar to MusikCheck (penalty points, lock artist/title guess points)
 
@@ -539,8 +537,12 @@ end note
 - add point buttons
 - update graphics, icons, colors, animations
 
+- paper look and animation for schnipsel
+
 ### Finally
 
+- default german option and optional english localization
+- create persistance of user info across sessions (user created gamemodes, highscores, connected local databases)
 - security:
   - spotify connection security
 - tests
@@ -553,3 +555,7 @@ make the following features consistent with MusikCheck 1
 
 - database/local source integration
 - highscore board
+
+### improvement areas
+
+- randomization, cross source randomization
