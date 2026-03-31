@@ -1,5 +1,6 @@
 import { ChangeEvent } from 'react';
 
+import { Button, Card, Field, StatusChip } from '../ui';
 import type { ModeFormValues } from '../../services/gameModeFormService';
 
 type Props = {
@@ -30,48 +31,49 @@ export function RuleConfigurationTab({
   onContinue,
 }: Props) {
   return (
-    <section>
-      <h3>{modeDetailsTitle || 'Game Mode Details'}</h3>
-      <p>
-        {modeDetailsEditable
-          ? 'Configure round types and frequencies.'
-          : 'Preset settings are read-only. You can continue or pick another tab.'}
-      </p>
+    <Card
+      title={modeDetailsTitle || 'Game Mode Details'}
+      subtitle={modeDetailsEditable
+        ? 'Configure round types and frequencies.'
+        : 'Preset settings are read-only. You can continue or pick another tab.'}
+    >
 
       <div className="source-row">
-        <label>
+        <label className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-cyan-50">
           <input
             type="checkbox"
             checked={modeFormValues.audioEnabled}
             disabled={!modeDetailsEditable}
             onChange={(event: ChangeEvent<HTMLInputElement>) => onFieldChange('audioEnabled', event.target.checked)}
+            className="min-h-0 h-4 w-4"
           />
-          Audio rounds
+          <span>Audio rounds</span>
         </label>
-        <label>
+        <label className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-cyan-50">
           <input
             type="checkbox"
             checked={modeFormValues.videoEnabled}
             disabled={!modeDetailsEditable}
             onChange={(event: ChangeEvent<HTMLInputElement>) => onFieldChange('videoEnabled', event.target.checked)}
+            className="min-h-0 h-4 w-4"
           />
-          Video rounds
+          <span>Video rounds</span>
         </label>
-        <label>
+        <label className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-cyan-50">
           <input
             type="checkbox"
             checked={modeFormValues.lyricsEnabled}
             disabled={!modeDetailsEditable}
             onChange={(event: ChangeEvent<HTMLInputElement>) => onFieldChange('lyricsEnabled', event.target.checked)}
+            className="min-h-0 h-4 w-4"
           />
-          Lyrics rounds
+          <span>Lyrics rounds</span>
         </label>
       </div>
 
       <div className="source-list">
         {modeFormValues.audioEnabled && (
-          <label>
-            Audio frequency (every N songs)
+          <Field label="Audio frequency (every N songs)">
             <input
               type="number"
               min={1}
@@ -79,11 +81,10 @@ export function RuleConfigurationTab({
               disabled={!modeDetailsEditable}
               onChange={(event: ChangeEvent<HTMLInputElement>) => onFieldChange('audioEverySongs', event.target.value)}
             />
-          </label>
+          </Field>
         )}
         {modeFormValues.videoEnabled && (
-          <label>
-            Video frequency (every N songs)
+          <Field label="Video frequency (every N songs)">
             <input
               type="number"
               min={1}
@@ -91,11 +92,10 @@ export function RuleConfigurationTab({
               disabled={!modeDetailsEditable}
               onChange={(event: ChangeEvent<HTMLInputElement>) => onFieldChange('videoEverySongs', event.target.value)}
             />
-          </label>
+          </Field>
         )}
         {modeFormValues.lyricsEnabled && (
-          <label>
-            Lyrics frequency (every N songs)
+          <Field label="Lyrics frequency (every N songs)">
             <input
               type="number"
               min={1}
@@ -103,42 +103,38 @@ export function RuleConfigurationTab({
               disabled={!modeDetailsEditable}
               onChange={(event: ChangeEvent<HTMLInputElement>) => onFieldChange('lyricsEverySongs', event.target.value)}
             />
-          </label>
+          </Field>
         )}
       </div>
 
       <div className="source-row">
-        <label>
-          Release year from
+        <Field label="Release year from">
           <input
             type="number"
             value={modeFormValues.releaseYearFrom}
             disabled={!modeDetailsEditable}
             onChange={(event: ChangeEvent<HTMLInputElement>) => onFieldChange('releaseYearFrom', event.target.value)}
           />
-        </label>
-        <label>
-          Release year to
+        </Field>
+        <Field label="Release year to">
           <input
             type="number"
             value={modeFormValues.releaseYearTo}
             disabled={!modeDetailsEditable}
             onChange={(event: ChangeEvent<HTMLInputElement>) => onFieldChange('releaseYearTo', event.target.value)}
           />
-        </label>
-        <label>
-          Language
+        </Field>
+        <Field label="Language">
           <input
             value={modeFormValues.language}
             disabled={!modeDetailsEditable}
             onChange={(event: ChangeEvent<HTMLInputElement>) => onFieldChange('language', event.target.value)}
           />
-        </label>
+        </Field>
       </div>
 
       <div className="source-row">
-        <label>
-          Snippet 1 duration (s)
+        <Field label="Snippet 1 duration (s)">
           <input
             type="number"
             min={1}
@@ -146,9 +142,8 @@ export function RuleConfigurationTab({
             disabled={!modeDetailsEditable}
             onChange={(event: ChangeEvent<HTMLInputElement>) => onFieldChange('snippet1Duration', event.target.value)}
           />
-        </label>
-        <label>
-          Snippet 2 duration (s)
+        </Field>
+        <Field label="Snippet 2 duration (s)">
           <input
             type="number"
             min={1}
@@ -156,9 +151,8 @@ export function RuleConfigurationTab({
             disabled={!modeDetailsEditable}
             onChange={(event: ChangeEvent<HTMLInputElement>) => onFieldChange('snippet2Duration', event.target.value)}
           />
-        </label>
-        <label>
-          Snippet 3 duration (s)
+        </Field>
+        <Field label="Snippet 3 duration (s)">
           <input
             type="number"
             min={1}
@@ -166,12 +160,11 @@ export function RuleConfigurationTab({
             disabled={!modeDetailsEditable}
             onChange={(event: ChangeEvent<HTMLInputElement>) => onFieldChange('snippet3Duration', event.target.value)}
           />
-        </label>
+        </Field>
       </div>
 
       <div className="source-row">
-        <label>
-          Snippet 1 points
+        <Field label="Snippet 1 points">
           <input
             type="number"
             min={0}
@@ -179,9 +172,8 @@ export function RuleConfigurationTab({
             disabled={!modeDetailsEditable}
             onChange={(event: ChangeEvent<HTMLInputElement>) => onFieldChange('snippet1Points', event.target.value)}
           />
-        </label>
-        <label>
-          Snippet 2 points
+        </Field>
+        <Field label="Snippet 2 points">
           <input
             type="number"
             min={0}
@@ -189,9 +181,8 @@ export function RuleConfigurationTab({
             disabled={!modeDetailsEditable}
             onChange={(event: ChangeEvent<HTMLInputElement>) => onFieldChange('snippet2Points', event.target.value)}
           />
-        </label>
-        <label>
-          Snippet 3 points
+        </Field>
+        <Field label="Snippet 3 points">
           <input
             type="number"
             min={0}
@@ -199,12 +190,11 @@ export function RuleConfigurationTab({
             disabled={!modeDetailsEditable}
             onChange={(event: ChangeEvent<HTMLInputElement>) => onFieldChange('snippet3Points', event.target.value)}
           />
-        </label>
+        </Field>
       </div>
 
       <div className="source-row">
-        <label>
-          Bonus (artist + title)
+        <Field label="Bonus (artist + title)">
           <input
             type="number"
             min={0}
@@ -212,9 +202,8 @@ export function RuleConfigurationTab({
             disabled={!modeDetailsEditable}
             onChange={(event: ChangeEvent<HTMLInputElement>) => onFieldChange('bothBonusPoints', event.target.value)}
           />
-        </label>
-        <label>
-          Wrong guess penalty
+        </Field>
+        <Field label="Wrong guess penalty">
           <input
             type="number"
             min={0}
@@ -222,9 +211,8 @@ export function RuleConfigurationTab({
             disabled={!modeDetailsEditable}
             onChange={(event: ChangeEvent<HTMLInputElement>) => onFieldChange('wrongGuessPenalty', event.target.value)}
           />
-        </label>
-        <label>
-          Required points to win
+        </Field>
+        <Field label="Required points to win">
           <input
             type="number"
             min={1}
@@ -232,36 +220,38 @@ export function RuleConfigurationTab({
             disabled={!modeDetailsEditable}
             onChange={(event: ChangeEvent<HTMLInputElement>) => onFieldChange('requiredPointsToWin', event.target.value)}
           />
-        </label>
+        </Field>
       </div>
 
       {requiredPhoneRoundTypes.length > 0 && (
-        <p>Round type {requiredPhoneRoundTypes.join(', ')} requires phones to be connected.</p>
+        <StatusChip>Round type {requiredPhoneRoundTypes.join(', ')} requires phones to be connected.</StatusChip>
       )}
 
       {modeDetailsEditable && (
         <>
-          <label>
+          <label className="mt-3 flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-cyan-50">
             <input
               type="checkbox"
               checked={saveAsPreset}
               onChange={(event: ChangeEvent<HTMLInputElement>) => onSaveAsPresetChange(event.target.checked)}
+              className="min-h-0 h-4 w-4"
             />
-            Save this setup as a new preset
+            <span>Save this setup as a new preset</span>
           </label>
-          <label>
-            Preset name
+          <Field label="Preset name">
             <input
               value={newPresetName}
               onChange={(event: ChangeEvent<HTMLInputElement>) => onNewPresetNameChange(event.target.value)}
               placeholder="My custom mode"
             />
-          </label>
-          <button onClick={onSavePreset}>Save Preset Now</button>
+          </Field>
+          <Button onClick={onSavePreset}>Save Preset Now</Button>
         </>
       )}
 
-      <button onClick={onContinue}>Continue to Sources & Players</button>
-    </section>
+      <div className="source-row mt-3">
+        <Button onClick={onContinue} variant="secondary">Continue to Sources And Players</Button>
+      </div>
+    </Card>
   );
 }

@@ -1,5 +1,6 @@
 import { ChangeEvent, RefObject } from 'react';
 
+import { Button, Card, Field, StatusChip } from '../ui';
 import type { LocalSource, SourceType } from '../../services/mediaSourceController';
 import type { GameState } from '../../types';
 
@@ -53,27 +54,22 @@ export function SourcePlayerControlTab({
   onStartGame,
 }: Props) {
   return (
-    <section>
-      <h3>Source And Player Control</h3>
-      <p>Add media sources and monitor connected players before starting the lobby page.</p>
+    <Card title="Source And Player Control" subtitle="Add media sources and monitor connected players before starting the lobby page.">
 
-      <label>
-        Host name
+      <Field label="Host name">
         <input value={hostName} onChange={(event: ChangeEvent<HTMLInputElement>) => onHostNameChange(event.target.value)} />
-      </label>
+      </Field>
 
-      <label>
-        Team names (comma-separated)
+      <Field label="Team names (comma-separated)">
         <input
           value={setupTeams}
           onChange={(event: ChangeEvent<HTMLInputElement>) => onSetupTeamsChange(event.target.value)}
           placeholder="Team A, Team B"
         />
-      </label>
+      </Field>
 
       <div className="source-row">
-        <label>
-          Source type
+        <Field label="Source type">
           <select
             value={newSourceType}
             onChange={(event: ChangeEvent<HTMLSelectElement>) => onSourceTypeChange(event.target.value as SourceType)}
@@ -84,26 +80,25 @@ export function SourcePlayerControlTab({
               </option>
             ))}
           </select>
-        </label>
+        </Field>
 
-        <label>
-          Source value
+        <Field label="Source value">
           <input
             value={newSourceValue}
             onChange={(event: ChangeEvent<HTMLInputElement>) => onSourceValueChange(event.target.value)}
             placeholder="Playlist URL or folder name"
           />
-        </label>
+        </Field>
 
         {newSourceType === 'local-folder' && (
-          <button onClick={onPickLocalFolder} type="button">
+          <Button onClick={onPickLocalFolder} type="button" variant="ghost">
             Pick Local Folder
-          </button>
+          </Button>
         )}
 
-        <button onClick={onAddSource} type="button">
+        <Button onClick={onAddSource} type="button">
           Add Source
-        </button>
+        </Button>
       </div>
 
       <input
@@ -121,9 +116,9 @@ export function SourcePlayerControlTab({
               <strong>{source.type}</strong>
               <span>{source.value}</span>
               {typeof source.importedCount === 'number' && <span>{source.importedCount} tracks</span>}
-              <button type="button" onClick={() => onRemoveSource(source.id)}>
+              <Button type="button" onClick={() => onRemoveSource(source.id)} variant="danger" size="sm">
                 Remove
-              </button>
+              </Button>
             </div>
           ))}
         </div>
@@ -134,11 +129,11 @@ export function SourcePlayerControlTab({
           <p>
             Lobby code: <strong>{state.lobby_code}</strong>
           </p>
-          <p>Share URL: {`${window.location.origin}/player/${state.lobby_code}`}</p>
+          <StatusChip>Share URL: {`${window.location.origin}/player/${state.lobby_code}`}</StatusChip>
 
-          <h4>Connected Players</h4>
+          <h4 className="mt-3 mb-2 text-lg font-display tracking-wide text-mc-cyan">Connected Players</h4>
           {state.players.length < 1 ? (
-            <p>No players connected yet.</p>
+            <p className="muted-copy">No players connected yet.</p>
           ) : (
             <ul>
               {state.players.map((player) => (
@@ -151,10 +146,10 @@ export function SourcePlayerControlTab({
         </>
       )}
 
-      <button onClick={onStartGame} disabled={startGameBusy || startGameDisabled}>
+      <Button onClick={onStartGame} disabled={startGameBusy || startGameDisabled} variant="secondary">
         {startGameBusy ? 'Starting...' : 'Start Game'}
-      </button>
-      {startGameHint && <p>{startGameHint}</p>}
-    </section>
+      </Button>
+      {startGameHint && <p className="danger-text mt-2">{startGameHint}</p>}
+    </Card>
   );
 }

@@ -1,9 +1,11 @@
 import { ChangeEvent, useEffect, useRef, useState } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
 import { useNavigate, useParams } from 'react-router-dom';
 
 import { GameModeSelectionTab } from '../components/tabs/GameModeSelectionTab';
 import { RuleConfigurationTab } from '../components/tabs/RuleConfigurationTab';
 import { SourcePlayerControlTab } from '../components/tabs/SourcePlayerControlTab';
+import { Button, Card, StatusChip } from '../components/ui';
 import { api } from '../services/api';
 import {
   buildFormValuesFromPreset,
@@ -50,6 +52,7 @@ export function HostSetupPage() {
   const navigate = useNavigate();
   const { code = '' } = useParams();
   const folderInputRef = useRef<HTMLInputElement | null>(null);
+  const launchTransitionTimeoutRef = useRef<number | null>(null);
   const [activeTab, setActiveTab] = useState<SetupTab>('startscreen');
 
   const [hostName, setHostName] = useState('Host');
@@ -79,6 +82,7 @@ export function HostSetupPage() {
   const stateRef = useRef<GameState | null>(null);
   const isHydratingSetupRef = useRef<boolean>(false);
   const [startGameBusy, setStartGameBusy] = useState<boolean>(false);
+  const [launchingGame, setLaunchingGame] = useState<boolean>(false);
   const [sessionExpired, setSessionExpired] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -219,6 +223,14 @@ export function HostSetupPage() {
     spotifyConnected,
     state?.lobby_code,
   ]);
+
+  useEffect(() => {
+    return () => {
+      if (launchTransitionTimeoutRef.current) {
+        window.clearTimeout(launchTransitionTimeoutRef.current);
+      }
+    };
+  }, []);
 
   const onFieldChange = <K extends keyof ModeFormValues>(field: K, value: ModeFormValues[K]) => {
     setModeFormValues((previous) => ({ ...previous, [field]: value }));
@@ -376,6 +388,10 @@ export function HostSetupPage() {
   };
 
   const startGame = async () => {
+    if (startGameBusy || launchingGame) {
+      return;
+    }
+
     setStartGameBusy(true);
     try {
       const modeConfig = buildModeConfig(modeFormValues);
@@ -401,8 +417,12 @@ export function HostSetupPage() {
 
       setState(lobbyState);
       setError(null);
-      navigate(`/host/lobby/${lobbyState.lobby_code}`);
+      setLaunchingGame(true);
+      launchTransitionTimeoutRef.current = window.setTimeout(() => {
+        navigate(`/host/lobby/${lobbyState.lobby_code}`);
+      }, 650);
     } catch (err) {
+      setLaunchingGame(false);
       applyUiError(err);
     } finally {
       setStartGameBusy(false);
@@ -427,29 +447,48 @@ export function HostSetupPage() {
   if (sessionExpired) {
     return (
       <main>
-        <h1>Session Expired</h1>
-        <p>{error || 'This lobby is no longer available.'}</p>
-        <div className="source-row">
-          <button onClick={() => navigate('/')}>Go To Home</button>
-        </div>
+        <Card>
+          <h1 className="page-heading">Session Expired</h1>
+          <p className="danger-text">{error || 'This lobby is no longer available.'}</p>
+          <div className="source-row mt-3">
+            <Button onClick={() => navigate('/')}>Go To Home</Button>
+          </div>
+        </Card>
       </main>
     );
   }
 
   return (
-    <main>
-      <h1>MusikCheck2 Setup</h1>
+    <>
+      <main>
+        <Card>
+          <StatusChip>Host Control Room</StatusChip>
+          <h1 className="page-heading mt-2">MusikCheck2 Setup</h1>
+          <p className="page-subheading">Configure mode, rules, and media sources before opening the lobby floor.</p>
+        </Card>
 
-      <div className="source-row" style={{ marginBottom: 16 }}>
-        <button onClick={() => setActiveTab('startscreen')} disabled={activeTab === 'startscreen'}>
+      <div className="source-row mb-4">
+        <Button
+          onClick={() => setActiveTab('startscreen')}
+          disabled={activeTab === 'startscreen'}
+          variant={activeTab === 'startscreen' ? 'secondary' : 'ghost'}
+        >
           Startscreen
-        </button>
-        <button onClick={() => setActiveTab('rules')} disabled={activeTab === 'rules'}>
+        </Button>
+        <Button
+          onClick={() => setActiveTab('rules')}
+          disabled={activeTab === 'rules'}
+          variant={activeTab === 'rules' ? 'secondary' : 'ghost'}
+        >
           Rule Configuration
-        </button>
-        <button onClick={() => setActiveTab('sources')} disabled={activeTab === 'sources'}>
+        </Button>
+        <Button
+          onClick={() => setActiveTab('sources')}
+          disabled={activeTab === 'sources'}
+          variant={activeTab === 'sources' ? 'secondary' : 'ghost'}
+        >
           Source And Player Control
-        </button>
+        </Button>
       </div>
 
       {activeTab === 'startscreen' && (
@@ -507,7 +546,36 @@ export function HostSetupPage() {
         />
       )}
 
-      {error && <p>{error}</p>}
-    </main>
+        {error && <p className="danger-text">{error}</p>}
+      </main>
+
+      <AnimatePresence>
+        {launchingGame && (
+          <motion.div
+            className="game-launch-overlay"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.25 }}
+          >
+            <motion.div
+              className="game-launch-card"
+              initial={{ y: 18, scale: 0.96, opacity: 0 }}
+              animate={{ y: 0, scale: 1, opacity: 1 }}
+              transition={{ duration: 0.35, ease: 'easeOut' }}
+            >
+              <p className="game-launch-title">Lights Up</p>
+              <p className="game-launch-subtitle">Moving from setup to the live game floor...</p>
+              <motion.div
+                className="game-launch-progress"
+                initial={{ scaleX: 0 }}
+                animate={{ scaleX: 1 }}
+                transition={{ duration: 0.55, ease: 'easeInOut' }}
+              />
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </>
   );
 }

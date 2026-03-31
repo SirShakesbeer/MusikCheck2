@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 
 import { RoundPanel } from '../components/RoundPanel';
 import { Scoreboard } from '../components/Scoreboard';
+import { Button, Card, StatusChip } from '../components/ui';
 import { api } from '../services/api';
 import { RoundPlaybackDispatcher } from '../services/playbackDispatcher';
 import { connectLobbySocket } from '../services/ws';
@@ -191,11 +192,13 @@ export function HostLobbyPage() {
   if (sessionExpired) {
     return (
       <main>
-        <h1>Session Expired</h1>
-        <p>{error || 'This lobby is no longer available.'}</p>
-        <div className="source-row">
-          <button onClick={() => navigate('/')}>Go To Home</button>
-        </div>
+        <Card>
+          <h1 className="page-heading">Session Expired</h1>
+          <p className="danger-text">{error || 'This lobby is no longer available.'}</p>
+          <div className="source-row mt-3">
+            <Button onClick={() => navigate('/')}>Go To Home</Button>
+          </div>
+        </Card>
       </main>
     );
   }
@@ -240,34 +243,41 @@ export function HostLobbyPage() {
 
   return (
     <main>
-      <h1>MusikCheck2 Lobby</h1>
-      <p>Lobby: {code}</p>
-      <p>Spotify playback: {spotifyConnected ? 'Connected' : 'Not connected'}</p>
-      {spotifyDeviceId && <p>Spotify device: {spotifyDeviceId}</p>}
+      <Card>
+        <StatusChip>Live Lobby</StatusChip>
+        <h1 className="page-heading mt-2">MusikCheck2 Lobby</h1>
+        <p className="page-subheading">Lobby: {code}</p>
+        <div className="source-row-mobile mb-2">
+          <StatusChip tone={spotifyConnected ? 'ok' : 'warn'}>Spotify {spotifyConnected ? 'Connected' : 'Not Connected'}</StatusChip>
+          {spotifyDeviceId && <StatusChip>Device {spotifyDeviceId}</StatusChip>}
+        </div>
 
-      <div className="source-row">
-        <button onClick={() => setOptionsOpen((current) => !current)}>
-          Options
-        </button>
-        <button
-          onClick={() => {
-            resetSetup();
-            navigate(`/host/setup/${code}`);
-          }}
-        >
-          Back To Setup
-        </button>
-      </div>
+        <div className="host-actions-grid">
+          <Button onClick={() => setOptionsOpen((current) => !current)} variant="ghost">
+            Options
+          </Button>
+          <Button
+            onClick={() => {
+              resetSetup();
+              navigate(`/host/setup/${code}`);
+            }}
+          >
+            Back To Setup
+          </Button>
+        </div>
+      </Card>
 
       {optionsOpen && (
-        <div className="source-row" style={{ marginBottom: 12 }}>
-          <button onClick={connectSpotify} disabled={spotifyAuthBusy}>
-            {spotifyAuthBusy ? 'Connecting Spotify...' : (spotifyConnected ? 'Reconnect Spotify' : 'Connect Spotify')}
-          </button>
-        </div>
+        <Card title="Options" tone="panel">
+          <div className="host-actions-grid mb-1">
+            <Button onClick={connectSpotify} disabled={spotifyAuthBusy}>
+              {spotifyAuthBusy ? 'Connecting Spotify...' : (spotifyConnected ? 'Reconnect Spotify' : 'Connect Spotify')}
+            </Button>
+          </div>
+        </Card>
       )}
 
-      {state?.message && <p>{state.message}</p>}
+      {state?.message && <StatusChip>{state.message}</StatusChip>}
 
       <RoundPanel
         round={state?.current_round ?? null}
@@ -277,24 +287,27 @@ export function HostLobbyPage() {
         onRevealRound={onRevealRound}
       />
 
-      <section>
-        <h3>Teams</h3>
+      <Card title="Teams">
         {state?.teams?.length ? (
           <div className="source-list">
             {state.teams.map((team) => {
               const roundState = teamRoundGuessState[team.id];
               return (
-                <div key={team.id} className="source-row">
-                  <strong>{team.name}</strong>
-                  <span>Score: {team.score}</span>
+                <div key={team.id} className="rounded-xl border border-white/10 bg-black/20 p-3">
+                  <div className="mb-2 flex items-center justify-between gap-2">
+                    <strong className="text-lg">{team.name}</strong>
+                    <StatusChip>Score: {team.score}</StatusChip>
+                  </div>
                   {roundState && (
-                    <span>
+                    <p className="muted-copy mb-2">
                       Artist {roundState.artist_points} / Title {roundState.title_points} / Bonus {roundState.bonus_points}
-                    </span>
+                    </p>
                   )}
-                  <button onClick={() => onToggleFact(team.id, 'artist')}>Toggle Artist</button>
-                  <button onClick={() => onToggleFact(team.id, 'title')}>Toggle Title</button>
-                  <button onClick={() => onPenalty(team.id)}>Wrong Guess Penalty</button>
+                  <div className="host-actions-grid">
+                    <Button onClick={() => onToggleFact(team.id, 'artist')} variant="ghost" size="sm">Toggle Artist</Button>
+                    <Button onClick={() => onToggleFact(team.id, 'title')} variant="ghost" size="sm">Toggle Title</Button>
+                    <Button onClick={() => onPenalty(team.id)} variant="danger" size="sm">Wrong Guess Penalty</Button>
+                  </div>
                 </div>
               );
             })}
@@ -302,14 +315,13 @@ export function HostLobbyPage() {
         ) : (
           <p>No teams available yet.</p>
         )}
-      </section>
+      </Card>
 
-      <section>
-        <h3>Players</h3>
+      <Card title="Players">
         {state?.players?.length ? (
-          <ul>
+          <ul className="space-y-2 pl-0">
             {state.players.map((player) => (
-              <li key={player.id}>
+              <li key={player.id} className="list-none rounded-xl border border-white/10 bg-black/20 px-3 py-2">
                 {player.name} ({player.ready ? 'ready' : 'not ready'})
               </li>
             ))}
@@ -317,11 +329,11 @@ export function HostLobbyPage() {
         ) : (
           <p>No connected players yet.</p>
         )}
-      </section>
+      </Card>
 
       <Scoreboard teams={state?.teams ?? []} maxPoints={state?.mode?.required_points_to_win ?? 1} />
 
-      {error && <p>{error}</p>}
+      {error && <p className="danger-text">{error}</p>}
     </main>
   );
 }
