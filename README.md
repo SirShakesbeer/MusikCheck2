@@ -285,10 +285,242 @@ python scripts/index_local_library.py "D:/Music"
 
 ## PlantUML Diagrams
 
-- Database schema: [docs/diagrams/database-schema.puml](docs/diagrams/database-schema.puml)
-- Runtime architecture: [docs/diagrams/architecture.puml](docs/diagrams/architecture.puml)
+Database schema
 
-Render in VS Code with any PlantUML extension, or via a PlantUML CLI pipeline.
+```plantuml
+@startuml database-schema
+hide methods
+hide stereotypes
+skinparam linetype ortho
+skinparam classAttributeIconSize 0
+
+title MusikCheck2 Database Schema
+
+entity "lobbies" as lobbies {
+  * id : uuid
+  --
+  code : varchar(8) <<unique,index>>
+  host_name : varchar(64)
+  mode_key : varchar(64)
+  created_at : datetime
+  expires_at : datetime
+}
+
+entity "teams" as teams {
+  * id : uuid
+  --
+  lobby_id : uuid <<fk,index>>
+  name : varchar(64)
+  score : int
+}
+
+entity "players" as players {
+  * id : uuid
+  --
+  lobby_id : uuid <<fk,index>>
+  team_id : uuid <<fk,nullable>>
+  name : varchar(64)
+}
+
+entity "lobby_runtime_states" as lobby_runtime_states {
+  * lobby_id : uuid <<pk,fk>>
+  --
+  song_number : int
+  mode_config : text
+  setup_teams : text
+  setup_mode_title : varchar(128)
+  spotify_connected : bool
+  updated_at : datetime
+}
+
+entity "player_runtime_states" as player_runtime_states {
+  * player_id : uuid <<pk,fk>>
+  --
+  lobby_id : uuid <<fk,index>>
+  ready : bool
+  updated_at : datetime
+}
+
+entity "active_round_states" as active_round_states {
+  * id : uuid
+  --
+  lobby_id : uuid <<fk,unique,index>>
+  media_source_id : varchar(128)
+  media_title : varchar(256)
+  media_artist : varchar(256)
+  media_path : varchar(2048)
+  round_kind : varchar(64)
+  song_number : int
+  stage_index : int
+  max_stage_reached : int
+  can_guess : bool
+  status : varchar(64)
+  snippet_url : varchar(2048)
+  playback_provider : varchar(64)
+  playback_ref : varchar(2048)
+  playback_token : int
+  track_duration_seconds : int
+  snippet_start_offsets : varchar(256)
+  updated_at : datetime
+}
+
+entity "active_round_team_states" as active_round_team_states {
+  * id : uuid
+  --
+  active_round_id : uuid <<fk,index>>
+  team_id : uuid <<fk,index>>
+  artist_points : int
+  title_points : int
+  bonus_points : int
+  artist_awarded_stage : int <<nullable>>
+  title_awarded_stage : int <<nullable>>
+  updated_at : datetime
+}
+
+entity "media_sources" as media_sources {
+  * id : uuid
+  --
+  provider_key : varchar(64) <<index>>
+  source_value : varchar(1024) <<unique>>
+  created_at : datetime
+  updated_at : datetime
+}
+
+entity "indexed_tracks" as indexed_tracks {
+  * id : uuid
+  --
+  source_id : uuid <<fk,index>>
+  file_path : varchar(2048) <<unique>>
+  title : varchar(256)
+  artist : varchar(256)
+  file_mtime : int
+  file_size : int
+  created_at : datetime
+  updated_at : datetime
+}
+
+entity "lobby_sources" as lobby_sources {
+  * id : uuid
+  --
+  lobby_id : uuid <<fk,index>>
+  source_id : uuid <<fk,index>>
+  source_type : varchar(64)
+  source_value : varchar(1024)
+  created_at : datetime
+}
+
+lobbies ||--o{ teams
+lobbies ||--o{ players
+lobbies ||--|| lobby_runtime_states
+lobbies ||--o{ lobby_sources
+lobbies ||--o| active_round_states
+
+teams ||--o{ players
+teams ||--o{ active_round_team_states
+
+players ||--|| player_runtime_states
+
+active_round_states ||--o{ active_round_team_states
+
+media_sources ||--o{ indexed_tracks
+media_sources ||--o{ lobby_sources
+
+note bottom of lobbies
+  TTL lifecycle:
+  expires_at = created_at + 24h
+  Expired lobbies are cleaned periodically.
+end note
+
+note right of lobby_sources
+  Per-lobby source mapping used by:
+  - setup restore
+  - lobby-scoped media selection
+end note
+
+@enduml
+```
+
+Runtime architecture:
+
+```plantuml
+@startuml architecture
+left to right direction
+skinparam linetype ortho
+
+title MusikCheck2 Runtime Architecture
+
+actor Host
+actor Player
+cloud Spotify
+cloud YouTube
+folder "Local Filesystem" as LocalFS
+
+node "Frontend (React + Vite)" as FE {
+  component "Home/Join Routes" as FE_Routes
+  component "HostSetupPage" as FE_Setup
+  component "HostLobbyPage" as FE_Lobby
+  component "PlayerPage" as FE_Player
+  component "api.ts" as FE_API
+  component "ws.ts" as FE_WS
+  component "playbackDispatcher.ts" as FE_Playback
+}
+
+node "Backend (FastAPI)" as BE {
+  component "routes.py" as BE_Routes
+  component "game_engine.py" as BE_Engine
+  component "game_mode_service.py" as BE_Modes
+  component "media_ingestion_service.py" as BE_Ingest
+  component "media_library_service.py" as BE_Library
+  component "media_processing_service.py" as BE_Process
+  component "ws_manager.py" as BE_WS
+  component "cleanup loop (5 min)" as BE_Cleanup
+}
+
+database "SQL DB\n(SQLite dev / Postgres docker)" as DB
+
+Host --> FE_Routes : Open app / host flow
+Player --> FE_Player : Join lobby and set ready
+
+FE_Setup --> FE_API : REST setup + source actions
+FE_Lobby --> FE_API : Round controls + spotify options
+FE_Player --> FE_API : Join / ready / guesses
+
+FE_WS <..> BE_WS : WebSocket /ws/{lobby_code}\nstate broadcasts
+
+FE_API --> BE_Routes : HTTP /api/*
+BE_Routes --> BE_Engine : Lobby + round orchestration
+BE_Routes --> BE_Modes : Validate/persist mode presets
+BE_Routes --> BE_Ingest : Source provider ingestion
+BE_Routes --> BE_Library : Register/index/sync tracks
+BE_Routes --> BE_Process : Snippet generation
+
+BE_Engine --> DB : Persist lobby/setup/round state
+BE_Library --> DB : Persist media sources + indexed tracks
+BE_Modes --> DB : Read preset references
+BE_Cleanup --> DB : Delete expired lobbies\nand orphan lobby-source links
+
+BE_Ingest --> YouTube : Playlist metadata fetch
+BE_Ingest --> Spotify : Playlist metadata + auth status
+BE_Library --> LocalFS : Local file scan/index
+
+FE_Playback --> Spotify : Browser playback control
+FE_Playback --> FE_Lobby : Token-driven playback sync
+
+note right of BE_Engine
+  Backend authoritative state:
+  - playback_token persisted
+  - lobby setup autosaved
+  - sources scoped per lobby
+end note
+
+note bottom of FE_Setup
+  Reopen /host/setup/:code restores:
+  host, teams, mode config, sources,
+  spotify_connected flag.
+end note
+
+@enduml
+```
 
 ## TODO
 
