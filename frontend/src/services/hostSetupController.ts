@@ -11,6 +11,13 @@ export async function ensurePhoneLobby(params: {
   teamNames: string[];
 }): Promise<GameState | null> {
   if (params.state?.lobby_code) {
+    // Update the mode config for the existing lobby
+    const modeUpdated = await api.updateLobbyMode(params.state.lobby_code, {
+      preset_key: params.selectedPresetKey,
+      mode_config: params.modeConfig,
+    });
+    
+    // Then sync the teams
     const synced = await api.syncLobbyTeams(params.state.lobby_code, params.teamNames);
     return synced.data;
   }

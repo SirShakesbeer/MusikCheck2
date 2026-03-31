@@ -37,15 +37,20 @@ from app.schemas.game import (
     CreateLobbyRequest,
     GuessRequest,
     JoinLobbyRequest,
+    LobbySetupState,
+    LobbySpotifyStateRequest,
+    LobbySourceState,
     LobbyReadinessState,
     PlayStageRequest,
     PlayerReadyRequest,
     RuntimeConfigState,
     RuntimeConfigUpdateRequest,
+    SaveLobbySetupRequest,
     StopRequest,
     SyncTeamsRequest,
     TeamFactToggleRequest,
     TeamPenaltyRequest,
+    UpdateLobbyModeRequest,
 )
 from app.schemas.game_mode import (
     CreateGameModePresetRequest,
@@ -395,6 +400,15 @@ def add_source_orchestrated(payload: AddSourceOrchestratedRequest, db: Session =
         
         # Get final track count
         total_tracks = media_library_service.get_source_track_count(db, source_id)
+
+        if payload.lobby_code:
+            game_engine.attach_source_to_lobby(
+                db,
+                payload.lobby_code,
+                source_id,
+                (payload.source_type or "local-folder"),
+                payload.source,
+            )
         
         data = AddSourceOrchestratedResponse(source_id=source_id, total_tracks=total_tracks)
         return {"ok": True, "data": data.model_dump()}
@@ -531,6 +545,108 @@ async def sync_lobby_teams(code: str, payload: SyncTeamsRequest, db: Session = D
     try:
         game_engine.sync_lobby_teams(db, code, payload.teams)
         state = game_engine.get_state(db, code, message="Teams synced")
+        await ws_manager.broadcast(code, {"type": "state", "data": state.model_dump()})
+        return ApiEnvelope(data=state)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
+
+@router.post("/lobbies/{code}/setup", response_model=dict)
+async def save_lobby_setup(code: str, payload: SaveLobbySetupRequest, db: Session = Depends(get_db)):
+    try:
+        custom_mode = None
+        if payload.mode_config:
+            custom_mode = game_mode_service.build_custom_mode(
+                name=(payload.mode_title or "Game Mode Details"),
+                stage_durations=payload.mode_config.stage_durations,
+                stage_points=payload.mode_config.stage_points,
+                round_rules=[
+                    RoundTypeRule(kind=rule.kind, every_n_songs=rule.every_n_songs)
+                    for rule in payload.mode_config.round_rules
+                ],
+                bonus_points_both=payload.mode_config.bonus_points_both,
+                wrong_guess_penalty=payload.mode_config.wrong_guess_penalty,
+                required_points_to_win=payload.mode_config.required_points_to_win,
+                filters=payload.mode_config.filters.model_dump(),
+            )
+
+        game_engine.save_lobby_setup(
+            db,
+            code,
+            host_name=payload.host_name,
+            team_names=payload.teams,
+            spotify_connected=payload.spotify_connected,
+            mode_title=payload.mode_title,
+        )
+        game_engine.update_lobby_mode(db, code, payload.preset_key, custom_mode)
+
+        data = LobbySetupState(**game_engine.get_lobby_setup(db, code))
+        return {"ok": True, "data": data.model_dump()}
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
+
+@router.get("/lobbies/{code}/setup", response_model=dict)
+def get_lobby_setup(code: str, db: Session = Depends(get_db)):
+    try:
+        data = LobbySetupState(**game_engine.get_lobby_setup(db, code))
+        return {"ok": True, "data": data.model_dump()}
+    except ValueError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+
+
+@router.get("/lobbies/{code}/sources", response_model=dict)
+def get_lobby_sources(code: str, db: Session = Depends(get_db)):
+    try:
+        rows = game_engine.list_lobby_sources(db, code)
+        data = [LobbySourceState(**row).model_dump() for row in rows]
+        return {"ok": True, "data": data}
+    except ValueError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+
+
+@router.post("/lobbies/{code}/sources/remove", response_model=dict)
+def remove_lobby_source(code: str, payload: CleanupSourcesRequest, db: Session = Depends(get_db)):
+    try:
+        for source_id in payload.source_ids:
+            game_engine.remove_source_from_lobby(db, code, source_id)
+        rows = game_engine.list_lobby_sources(db, code)
+        data = [LobbySourceState(**row).model_dump() for row in rows]
+        return {"ok": True, "data": data}
+    except ValueError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+
+
+@router.post("/lobbies/{code}/spotify", response_model=dict)
+def set_lobby_spotify(code: str, payload: LobbySpotifyStateRequest, db: Session = Depends(get_db)):
+    try:
+        game_engine.set_lobby_spotify_connected(db, code, payload.connected)
+        return {"ok": True, "data": {"connected": bool(payload.connected)}}
+    except ValueError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+
+
+@router.post("/lobbies/{code}/mode", response_model=ApiEnvelope)
+async def update_lobby_mode(code: str, payload: UpdateLobbyModeRequest, db: Session = Depends(get_db)):
+    try:
+        custom_mode = None
+        if payload.mode_config:
+            custom_mode = game_mode_service.build_custom_mode(
+                name="Updated Mode",
+                stage_durations=payload.mode_config.stage_durations,
+                stage_points=payload.mode_config.stage_points,
+                round_rules=[
+                    RoundTypeRule(kind=rule.kind, every_n_songs=rule.every_n_songs)
+                    for rule in payload.mode_config.round_rules
+                ],
+                bonus_points_both=payload.mode_config.bonus_points_both,
+                wrong_guess_penalty=payload.mode_config.wrong_guess_penalty,
+                required_points_to_win=payload.mode_config.required_points_to_win,
+                filters=payload.mode_config.filters.model_dump(),
+            )
+        
+        game_engine.update_lobby_mode(db, code, payload.preset_key, custom_mode)
+        state = game_engine.get_state(db, code, message="Lobby mode updated")
         await ws_manager.broadcast(code, {"type": "state", "data": state.model_dump()})
         return ApiEnvelope(data=state)
     except ValueError as error:

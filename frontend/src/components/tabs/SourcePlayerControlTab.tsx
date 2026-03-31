@@ -22,7 +22,6 @@ type Props = {
   onAddSource: () => void;
   onRemoveSource: (sourceId: string) => void;
   onFolderFilesSelected: (event: ChangeEvent<HTMLInputElement>) => void;
-  onEnsureLobby: () => void;
   onStartGame: () => void;
 };
 
@@ -51,7 +50,6 @@ export function SourcePlayerControlTab({
   onAddSource,
   onRemoveSource,
   onFolderFilesSelected,
-  onEnsureLobby,
   onStartGame,
 }: Props) {
   return (
@@ -130,12 +128,6 @@ export function SourcePlayerControlTab({
           ))}
         </div>
       )}
-
-      <div className="source-row">
-        <button onClick={onEnsureLobby} type="button">
-          {state?.lobby_code ? 'Refresh Lobby State' : 'Create Lobby'}
-        </button>
-      </div>
 
       {state?.lobby_code && (
         <>

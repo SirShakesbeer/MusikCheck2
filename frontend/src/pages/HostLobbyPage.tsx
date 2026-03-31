@@ -20,9 +20,22 @@ export function HostLobbyPage() {
 
   const [state, setState] = useState<GameState | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [sessionExpired, setSessionExpired] = useState<boolean>(false);
   const [spotifyConnected, setSpotifyConnected] = useState<boolean>(false);
+  const [spotifyAuthBusy, setSpotifyAuthBusy] = useState<boolean>(false);
+  const [optionsOpen, setOptionsOpen] = useState<boolean>(false);
   const [spotifyDeviceId, setSpotifyDeviceId] = useState<string | null>(null);
   const lastPlaybackTokenRef = useRef<number>(0);
+
+  const applyUiError = (err: unknown) => {
+    const message = err instanceof Error ? err.message : String(err);
+    if (message.toLowerCase().includes('expired')) {
+      setSessionExpired(true);
+      setError('This session has expired after 24 hours. Start a new lobby to continue.');
+      return;
+    }
+    setError(message);
+  };
 
   const stopAllPlayback = () => {
     playbackDispatcher.stop();
@@ -35,8 +48,9 @@ export function HostLobbyPage() {
       try {
         const result = await api.getLobbyState(code);
         setState(result.data);
+        setSessionExpired(false);
       } catch (err) {
-        setError(err instanceof Error ? err.message : String(err));
+        applyUiError(err);
       }
     };
 
@@ -101,7 +115,7 @@ export function HostLobbyPage() {
       setState(result.data);
       setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      applyUiError(err);
     }
   };
 
@@ -126,7 +140,7 @@ export function HostLobbyPage() {
       setState(result.data);
       setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      applyUiError(err);
     }
   };
 
@@ -140,7 +154,7 @@ export function HostLobbyPage() {
       stopAllPlayback();
       setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      applyUiError(err);
     }
   };
 
@@ -150,7 +164,7 @@ export function HostLobbyPage() {
       setState(result.data);
       setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      applyUiError(err);
     }
   };
 
@@ -160,7 +174,7 @@ export function HostLobbyPage() {
       setState(result.data);
       setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      applyUiError(err);
     }
   };
 
@@ -170,7 +184,57 @@ export function HostLobbyPage() {
       setState(result.data);
       setError(null);
     } catch (err) {
+      applyUiError(err);
+    }
+  };
+
+  if (sessionExpired) {
+    return (
+      <main>
+        <h1>Session Expired</h1>
+        <p>{error || 'This lobby is no longer available.'}</p>
+        <div className="source-row">
+          <button onClick={() => navigate('/')}>Go To Home</button>
+        </div>
+      </main>
+    );
+  }
+
+  const connectSpotify = async () => {
+    setSpotifyAuthBusy(true);
+    try {
+      const auth = await api.getSpotifyAuthUrl();
+      const popup = window.open(auth.data.auth_url, 'spotify-oauth', 'width=520,height=720,resizable=yes');
+      if (!popup) {
+        throw new Error('Popup was blocked. Please allow popups for Spotify login.');
+      }
+
+      const startedAt = Date.now();
+      const intervalId = window.setInterval(async () => {
+        const elapsedMs = Date.now() - startedAt;
+        if (elapsedMs > 120000) {
+          window.clearInterval(intervalId);
+          setSpotifyAuthBusy(false);
+          return;
+        }
+
+        try {
+          const status = await api.getSpotifyStatus();
+          if (status.data.connected) {
+            setSpotifyConnected(true);
+            await api.setLobbySpotifyConnection(code, true);
+            setSpotifyAuthBusy(false);
+            window.clearInterval(intervalId);
+            if (!popup.closed) {
+              popup.close();
+            }
+          }
+        } catch {
+        }
+      }, 1500);
+    } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
+      setSpotifyAuthBusy(false);
     }
   };
 
@@ -182,15 +246,26 @@ export function HostLobbyPage() {
       {spotifyDeviceId && <p>Spotify device: {spotifyDeviceId}</p>}
 
       <div className="source-row">
+        <button onClick={() => setOptionsOpen((current) => !current)}>
+          Options
+        </button>
         <button
           onClick={() => {
             resetSetup();
-            navigate('/host/setup');
+            navigate(`/host/setup/${code}`);
           }}
         >
           Back To Setup
         </button>
       </div>
+
+      {optionsOpen && (
+        <div className="source-row" style={{ marginBottom: 12 }}>
+          <button onClick={connectSpotify} disabled={spotifyAuthBusy}>
+            {spotifyAuthBusy ? 'Connecting Spotify...' : (spotifyConnected ? 'Reconnect Spotify' : 'Connect Spotify')}
+          </button>
+        </div>
+      )}
 
       {state?.message && <p>{state.message}</p>}
 

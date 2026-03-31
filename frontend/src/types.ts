@@ -113,6 +113,35 @@ export type CreateLobbyPayload = {
   preset_name?: string;
 };
 
+export type UpdateLobbyModePayload = {
+  preset_key?: string;
+  mode_config?: GameModeConfig;
+};
+
+export type SaveLobbySetupPayload = {
+  host_name: string;
+  teams: string[];
+  preset_key?: string;
+  mode_title?: string;
+  mode_config?: GameModeConfig;
+  spotify_connected: boolean;
+};
+
+export type LobbySetupState = {
+  host_name: string;
+  teams: string[];
+  preset_key: string;
+  mode_title: string;
+  spotify_connected: boolean;
+};
+
+export type LobbySourceState = {
+  source_id: string;
+  source_type: string;
+  source_value: string;
+  imported_count: number;
+};
+
 export type LobbyReadinessState = {
   ready: boolean;
   issues: string[];
@@ -126,6 +155,16 @@ export type LobbyReadinessEnvelope = {
 export type ApiEnvelope = {
   ok: boolean;
   data: GameState;
+};
+
+export type LobbySetupEnvelope = {
+  ok: boolean;
+  data: LobbySetupState;
+};
+
+export type LobbySourcesEnvelope = {
+  ok: boolean;
+  data: LobbySourceState[];
 };
 
 export type IngestPreviewItem = {

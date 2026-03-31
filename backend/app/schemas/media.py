@@ -82,6 +82,8 @@ class ListIndexedTracksResponse(BaseModel):
 class AddSourceOrchestratedRequest(BaseModel):
     provider_key: str = Field(min_length=1)
     source: str = Field(min_length=1)
+    lobby_code: str | None = None
+    source_type: str | None = None
 
 
 class AddSourceOrchestratedResponse(BaseModel):

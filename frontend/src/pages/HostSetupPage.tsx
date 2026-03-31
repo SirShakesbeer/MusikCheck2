@@ -1,5 +1,5 @@
 import { ChangeEvent, useEffect, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 
 import { GameModeSelectionTab } from '../components/tabs/GameModeSelectionTab';
 import { RuleConfigurationTab } from '../components/tabs/RuleConfigurationTab';
@@ -20,7 +20,6 @@ import {
 } from '../services/hostSetupController';
 import {
   addSource,
-  cleanupBackendSources,
   extractFolderSelection,
   pickLocalFolderName,
   type LocalSource,
@@ -41,8 +40,15 @@ function parseTeamNames(raw: string): string[] {
     .map((lowered) => names.find((name) => name.toLowerCase() === lowered) as string);
 }
 
+function normalizeSourceType(raw: string): SourceType {
+  if (raw === 'youtube-playlist') return 'youtube-playlist';
+  if (raw === 'spotify-playlist') return 'spotify-playlist';
+  return 'local-folder';
+}
+
 export function HostSetupPage() {
   const navigate = useNavigate();
+  const { code = '' } = useParams();
   const folderInputRef = useRef<HTMLInputElement | null>(null);
   const [activeTab, setActiveTab] = useState<SetupTab>('startscreen');
 
@@ -71,17 +77,30 @@ export function HostSetupPage() {
 
   const [state, setState] = useState<GameState | null>(null);
   const stateRef = useRef<GameState | null>(null);
+  const isHydratingSetupRef = useRef<boolean>(false);
   const [startGameBusy, setStartGameBusy] = useState<boolean>(false);
+  const [sessionExpired, setSessionExpired] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+
+  const applyUiError = (err: unknown) => {
+    const message = err instanceof Error ? err.message : String(err);
+    if (message.toLowerCase().includes('expired')) {
+      setSessionExpired(true);
+      setError('This session has expired after 24 hours. Create a new lobby to continue.');
+      return;
+    }
+    setError(message);
+  };
 
   useEffect(() => {
     stateRef.current = state;
   }, [state]);
 
   useEffect(() => {
-    if (!state?.lobby_code) return;
-    return connectLobbySocket(state.lobby_code, setState);
-  }, [state?.lobby_code]);
+    const lobbyCode = (state?.lobby_code || code || '').trim();
+    if (!lobbyCode) return;
+    return connectLobbySocket(lobbyCode, setState);
+  }, [code, state?.lobby_code]);
 
   useEffect(() => {
     const loadRuntimeConfig = async () => {
@@ -96,7 +115,7 @@ export function HostSetupPage() {
         const modes = await api.getGameModes();
         setGameModes(modes.data);
 
-        if (modes.data.length > 0) {
+        if (modes.data.length > 0 && !code.trim()) {
           const defaultPreset = modes.data.find((preset) => preset.key === 'classic_audio') ?? modes.data[0];
           setSelectedPresetKey(defaultPreset.key);
           setModeDetailsTitle(defaultPreset.name);
@@ -108,13 +127,98 @@ export function HostSetupPage() {
     };
 
     void loadRuntimeConfig();
-  }, []);
+  }, [code]);
+
+  useEffect(() => {
+    const lobbyCode = code.trim();
+    if (!lobbyCode) {
+      navigate('/', { replace: true });
+      return;
+    }
+
+    const loadLobby = async () => {
+      isHydratingSetupRef.current = true;
+      try {
+        const [stateResult, setupResult, sourcesResult] = await Promise.all([
+          api.getLobbyState(lobbyCode),
+          api.getLobbySetup(lobbyCode),
+          api.getLobbySources(lobbyCode),
+        ]);
+
+        setState(stateResult.data);
+        setHostName(setupResult.data.host_name || 'Host');
+        setSetupTeams(setupResult.data.teams.join(', '));
+        setSelectedPresetKey(setupResult.data.preset_key || stateResult.data.mode_key || 'classic_audio');
+        setModeDetailsTitle(setupResult.data.mode_title || stateResult.data.mode.name || 'Game Mode Details');
+        setModeFormValues(buildFormValuesFromPreset(stateResult.data.mode));
+        setSpotifyConnected(Boolean(setupResult.data.spotify_connected));
+        setLocalSources(
+          sourcesResult.data.map((source) => ({
+            id: source.source_id,
+            type: normalizeSourceType(source.source_type),
+            value: source.source_value,
+            backendSourceId: source.source_id,
+            importedCount: source.imported_count,
+          }))
+        );
+        setSessionExpired(false);
+        setError(null);
+      } catch (err) {
+        applyUiError(err);
+      } finally {
+        isHydratingSetupRef.current = false;
+      }
+    };
+
+    void loadLobby();
+  }, [code, navigate]);
 
   useEffect(() => {
     if (!folderInputRef.current) return;
     folderInputRef.current.setAttribute('webkitdirectory', '');
     folderInputRef.current.setAttribute('directory', '');
   }, []);
+
+  useEffect(() => {
+    const lobbyCode = (state?.lobby_code || code || '').trim();
+    if (!lobbyCode || isHydratingSetupRef.current || sessionExpired) {
+      return;
+    }
+
+    const modeConfig = buildModeConfig(modeFormValues);
+    const teamNames = parseTeamNames(setupTeams);
+    if (!hostName.trim() || teamNames.length < 1) {
+      return;
+    }
+
+    const timeout = window.setTimeout(async () => {
+      try {
+        await api.saveLobbySetup(lobbyCode, {
+          host_name: hostName.trim(),
+          teams: teamNames,
+          preset_key: selectedPresetKey,
+          mode_title: modeDetailsTitle,
+          mode_config: modeConfig,
+          spotify_connected: spotifyConnected,
+        });
+      } catch {
+      }
+    }, 800);
+
+    return () => {
+      window.clearTimeout(timeout);
+    };
+  }, [
+    code,
+    hostName,
+    modeDetailsTitle,
+    modeFormValues,
+    selectedPresetKey,
+    sessionExpired,
+    setupTeams,
+    spotifyConnected,
+    state?.lobby_code,
+  ]);
 
   const onFieldChange = <K extends keyof ModeFormValues>(field: K, value: ModeFormValues[K]) => {
     setModeFormValues((previous) => ({ ...previous, [field]: value }));
@@ -206,24 +310,26 @@ export function HostSetupPage() {
         }
       }, 1500);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      applyUiError(err);
       setSpotifyAuthBusy(false);
     }
   };
 
   const addLocalSource = async () => {
     try {
+      const lobbyCode = (state?.lobby_code || code || '').trim();
       const source = await addSource({
         sourceType: newSourceType,
         sourceValue: newSourceValue,
         pendingLocalFileCount,
+        lobbyCode,
       });
       setLocalSources((previous) => [...previous, source]);
       setNewSourceValue('');
       setPendingLocalFileCount(0);
       setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      applyUiError(err);
     }
   };
 
@@ -236,10 +342,13 @@ export function HostSetupPage() {
     }
 
     try {
-      await cleanupBackendSources([source.backendSourceId]);
+      const lobbyCode = (state?.lobby_code || code || '').trim();
+      if (lobbyCode) {
+        await api.removeLobbySources(lobbyCode, [source.backendSourceId]);
+      }
       setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      applyUiError(err);
     }
   };
 
@@ -264,25 +373,6 @@ export function HostSetupPage() {
     }
 
     folderInputRef.current?.click();
-  };
-
-  const ensureLobby = async () => {
-    try {
-      const modeConfig = buildModeConfig(modeFormValues);
-      const teamNames = parseTeamNames(setupTeams);
-      const nextState = await ensurePhoneLobbyFlow({
-        state: stateRef.current,
-        hostName,
-        selectedPresetKey,
-        modeDetailsTitle,
-        modeConfig,
-        teamNames,
-      });
-      setState(nextState);
-      setError(null);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    }
   };
 
   const startGame = async () => {
@@ -313,7 +403,7 @@ export function HostSetupPage() {
       setError(null);
       navigate(`/host/lobby/${lobbyState.lobby_code}`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      applyUiError(err);
     } finally {
       setStartGameBusy(false);
     }
@@ -332,6 +422,18 @@ export function HostSetupPage() {
     startGameHint = 'Add at least one team name before starting.';
   } else if (!runtimeTestMode && !hasAtLeastOneSource) {
     startGameHint = 'Add at least one media source or enable test mode before starting.';
+  }
+
+  if (sessionExpired) {
+    return (
+      <main>
+        <h1>Session Expired</h1>
+        <p>{error || 'This lobby is no longer available.'}</p>
+        <div className="source-row">
+          <button onClick={() => navigate('/')}>Go To Home</button>
+        </div>
+      </main>
+    );
   }
 
   return (
@@ -401,7 +503,6 @@ export function HostSetupPage() {
           onAddSource={addLocalSource}
           onRemoveSource={removeLocalSource}
           onFolderFilesSelected={onFolderFilesSelected}
-          onEnsureLobby={ensureLobby}
           onStartGame={startGame}
         />
       )}

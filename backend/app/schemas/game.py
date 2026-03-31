@@ -12,6 +12,40 @@ class CreateLobbyRequest(BaseModel):
     preset_name: str | None = Field(default=None, max_length=64)
 
 
+class UpdateLobbyModeRequest(BaseModel):
+    """Update the game mode config for an existing lobby"""
+    preset_key: str | None = None
+    mode_config: GameModePresetConfig | None = None
+
+
+class SaveLobbySetupRequest(BaseModel):
+    host_name: str = Field(min_length=1, max_length=64)
+    teams: list[str] = []
+    preset_key: str | None = None
+    mode_title: str | None = Field(default=None, max_length=128)
+    mode_config: GameModePresetConfig | None = None
+    spotify_connected: bool = False
+
+
+class LobbySetupState(BaseModel):
+    host_name: str
+    teams: list[str]
+    preset_key: str
+    mode_title: str
+    spotify_connected: bool
+
+
+class LobbySourceState(BaseModel):
+    source_id: str
+    source_type: str
+    source_value: str
+    imported_count: int
+
+
+class LobbySpotifyStateRequest(BaseModel):
+    connected: bool
+
+
 class JoinLobbyRequest(BaseModel):
     player_name: str = Field(min_length=1, max_length=64)
     team_name: str = Field(min_length=1, max_length=64)

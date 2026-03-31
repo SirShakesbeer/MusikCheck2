@@ -1,4 +1,4 @@
-import time
+import asyncio
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
@@ -20,9 +20,22 @@ app.add_middleware(
 
 app.include_router(router, prefix=settings.api_prefix)
 
+cleanup_task: asyncio.Task | None = None
+
+
+async def run_periodic_cleanup() -> None:
+    while True:
+        try:
+            with SessionLocal() as db:
+                game_engine.cleanup_expired_lobbies_and_orphan_links(db)
+        except Exception:
+            # Cleanup is best-effort and should never crash the app loop.
+            pass
+        await asyncio.sleep(300)
+
 
 @app.on_event("startup")
-def startup() -> None:
+async def startup() -> None:
     max_attempts = 20
     delay_seconds = 1.5
     last_error: Exception | None = None
@@ -31,12 +44,29 @@ def startup() -> None:
         try:
             Base.metadata.create_all(bind=engine)
             apply_schema_patches()
+            with SessionLocal() as db:
+                game_engine.cleanup_expired_lobbies_and_orphan_links(db)
+
+            global cleanup_task
+            cleanup_task = asyncio.create_task(run_periodic_cleanup())
             return
         except OperationalError as error:
             last_error = error
-            time.sleep(delay_seconds)
+            await asyncio.sleep(delay_seconds)
 
     raise RuntimeError("Database unavailable after startup retries") from last_error
+
+
+@app.on_event("shutdown")
+async def shutdown() -> None:
+    global cleanup_task
+    if cleanup_task:
+        cleanup_task.cancel()
+        try:
+            await cleanup_task
+        except asyncio.CancelledError:
+            pass
+        cleanup_task = None
 
 
 @app.websocket("/ws/{lobby_code}")

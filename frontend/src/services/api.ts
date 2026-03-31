@@ -17,6 +17,10 @@ import type {
   RunLocalIndexEnvelope,
   CleanupSourcesEnvelope,
   RunSourceSyncEnvelope,
+  UpdateLobbyModePayload,
+  LobbySetupEnvelope,
+  LobbySourcesEnvelope,
+  SaveLobbySetupPayload,
 } from '../types';
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? 'http://localhost:8000/api';
@@ -98,10 +102,12 @@ export const api = {
     }),
   validateGameMode: (config: GameModeConfig) =>
     post<any, { config: GameModeConfig }>('/game-modes/validate', { config }),
-  addSourceOrchestrated: (providerKey: string, source: string) =>
-    post<any, { provider_key: string; source: string }>('/media/sources/add-orchestrated', {
+  addSourceOrchestrated: (providerKey: string, source: string, lobbyCode?: string, sourceType?: string) =>
+    post<any, { provider_key: string; source: string; lobby_code?: string; source_type?: string }>('/media/sources/add-orchestrated', {
       provider_key: providerKey,
       source,
+      lobby_code: lobbyCode,
+      source_type: sourceType,
     }),
   getSpotifyAuthUrl: () => get<SpotifyAuthUrlEnvelope>('/spotify/auth-url'),
   getSpotifyStatus: () => get<SpotifyStatusEnvelope>('/spotify/status'),
@@ -177,6 +183,16 @@ export const api = {
     post<ApiEnvelope, { teams: string[] }>(`/lobbies/${code}/teams/sync`, {
       teams,
     }),
+  saveLobbySetup: (code: string, payload: SaveLobbySetupPayload) =>
+    post<LobbySetupEnvelope, SaveLobbySetupPayload>(`/lobbies/${code}/setup`, payload),
+  getLobbySetup: (code: string) => get<LobbySetupEnvelope>(`/lobbies/${code}/setup`),
+  getLobbySources: (code: string) => get<LobbySourcesEnvelope>(`/lobbies/${code}/sources`),
+  removeLobbySources: (code: string, sourceIds: string[]) =>
+    post<LobbySourcesEnvelope, { source_ids: string[] }>(`/lobbies/${code}/sources/remove`, { source_ids: sourceIds }),
+  setLobbySpotifyConnection: (code: string, connected: boolean) =>
+    post<{ ok: boolean; data: { connected: boolean } }, { connected: boolean }>(`/lobbies/${code}/spotify`, { connected }),
+  updateLobbyMode: (code: string, payload: UpdateLobbyModePayload) =>
+    post<ApiEnvelope, UpdateLobbyModePayload>(`/lobbies/${code}/mode`, payload),
   validateLobbyStart: (code: string) => get<LobbyReadinessEnvelope>(`/lobbies/${code}/validate-start`),
   startRound: (code: string) => post<ApiEnvelope, Record<string, never>>(`/lobbies/${code}/rounds/start`, {}),
   nextRound: (code: string) => post<ApiEnvelope, Record<string, never>>(`/lobbies/${code}/rounds/next`, {}),

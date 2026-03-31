@@ -1,7 +1,7 @@
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -15,6 +15,7 @@ class Lobby(Base):
     host_name: Mapped[str] = mapped_column(String(64))
     mode_key: Mapped[str] = mapped_column(String(64))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    expires_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.utcnow() + timedelta(hours=24))
 
     teams: Mapped[list["Team"]] = relationship(back_populates="lobby", cascade="all, delete-orphan")
     players: Mapped[list["Player"]] = relationship(back_populates="lobby", cascade="all, delete-orphan")
@@ -49,6 +50,10 @@ class LobbyRuntimeState(Base):
 
     lobby_id: Mapped[str] = mapped_column(String(36), ForeignKey("lobbies.id"), primary_key=True)
     song_number: Mapped[int] = mapped_column(Integer, default=0)
+    mode_config: Mapped[str] = mapped_column(Text, default="", nullable=True)
+    setup_teams: Mapped[str] = mapped_column(Text, default="", nullable=True)
+    setup_mode_title: Mapped[str] = mapped_column(String(128), default="Game Mode Details")
+    spotify_connected: Mapped[bool] = mapped_column(Boolean, default=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
@@ -79,6 +84,7 @@ class ActiveRoundState(Base):
     snippet_url: Mapped[str] = mapped_column(String(2048))
     playback_provider: Mapped[str] = mapped_column(String(64), default="local_files")
     playback_ref: Mapped[str] = mapped_column(String(2048), default="")
+    playback_token: Mapped[int] = mapped_column(Integer, default=0)
     track_duration_seconds: Mapped[int] = mapped_column(Integer, default=240)
     snippet_start_offsets: Mapped[str] = mapped_column(String(256), default="0,0,0")
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -96,6 +102,17 @@ class ActiveRoundTeamState(Base):
     artist_awarded_stage: Mapped[int] = mapped_column(Integer, nullable=True, default=None)
     title_awarded_stage: Mapped[int] = mapped_column(Integer, nullable=True, default=None)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class LobbySource(Base):
+    __tablename__ = "lobby_sources"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    lobby_id: Mapped[str] = mapped_column(String(36), ForeignKey("lobbies.id"), index=True)
+    source_id: Mapped[str] = mapped_column(String(36), ForeignKey("media_sources.id"), index=True)
+    source_type: Mapped[str] = mapped_column(String(64), default="local-folder")
+    source_value: Mapped[str] = mapped_column(String(1024), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
 class MediaSource(Base):

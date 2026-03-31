@@ -1,5 +1,7 @@
+import json
 import random
 import string
+from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -9,6 +11,7 @@ from app.domain.models import (
     IndexedTrack,
     Lobby,
     LobbyRuntimeState,
+    LobbySource,
     MediaSource,
     Player,
     PlayerRuntimeState,
@@ -18,7 +21,7 @@ from app.domain.snippets import SnippetSpec
 from app.domain.providers.base import MediaItem
 from app.schemas.game_mode import GameModeFiltersState, GameModePresetState, RoundTypeRuleState
 from app.schemas.game import GameState, PlayerState, RoundState, RoundTeamState, TeamState
-from app.services.game_mode_service import GameModePreset, GameModeService
+from app.services.game_mode_service import GameModePreset, GameModeService, RoundTypeRule
 from app.services.media_processing_service import MediaProcessingService
 from app.services.media_ingestion_service import MediaIngestionService
 
@@ -34,21 +37,46 @@ class GameEngine:
         self.media_processing = media_processing
         self.media_ingestion = media_ingestion
         self._lobby_modes: dict[str, GameModePreset] = {}
-        self._playback_tokens: dict[str, int] = {}
 
-    def _set_playback_token(self, lobby_code: str, token: int) -> int:
-        normalized = max(0, int(token))
-        self._playback_tokens[lobby_code] = normalized
-        return normalized
+    def _serialize_mode(self, mode: GameModePreset | None) -> str:
+        """Serialize a GameModePreset to JSON for database storage."""
+        if not mode:
+            return ""
+        config_dict = {
+            "key": mode.key,
+            "name": mode.name,
+            "stage_durations": mode.stage_durations,
+            "stage_points": mode.stage_points,
+            "bonus_points_both": mode.bonus_points_both,
+            "wrong_guess_penalty": mode.wrong_guess_penalty,
+            "required_points_to_win": mode.required_points_to_win,
+            "round_rules": [{"kind": rule.kind, "every_n_songs": rule.every_n_songs} for rule in mode.round_rules],
+            "filters": mode.filters,
+        }
+        return json.dumps(config_dict)
 
-    def _bump_playback_token(self, lobby_code: str) -> int:
-        current = self._playback_tokens.get(lobby_code, 0)
-        next_value = current + 1
-        self._playback_tokens[lobby_code] = next_value
-        return next_value
-
-    def _get_playback_token(self, lobby_code: str) -> int:
-        return self._playback_tokens.get(lobby_code, 0)
+    def _deserialize_mode(self, mode_json: str | None, preset_key: str) -> GameModePreset | None:
+        """Deserialize a JSON mode config and reconstruct the GameModePreset."""
+        if not mode_json or not mode_json.strip():
+            return None
+        try:
+            data = json.loads(mode_json)
+            return GameModePreset(
+                key=data.get("key", preset_key),
+                name=data.get("name", "Custom"),
+                stage_durations=data.get("stage_durations", []),
+                stage_points=data.get("stage_points", []),
+                round_rules=[
+                    RoundTypeRule(kind=rule["kind"], every_n_songs=rule["every_n_songs"])
+                    for rule in data.get("round_rules", [])
+                ],
+                bonus_points_both=data.get("bonus_points_both", 1),
+                wrong_guess_penalty=data.get("wrong_guess_penalty", 0),
+                required_points_to_win=data.get("required_points_to_win", 15),
+                filters=data.get("filters", {}),
+            )
+        except (json.JSONDecodeError, KeyError, TypeError):
+            return None
 
     def _generate_code(self, db: Session) -> str:
         while True:
@@ -82,7 +110,9 @@ class GameEngine:
         db.commit()
         db.refresh(lobby)
 
-        runtime_state = LobbyRuntimeState(lobby_id=lobby.id, song_number=0)
+        # Serialize the mode config (custom or default) for restart resilience
+        mode_config_json = self._serialize_mode(mode_override if mode_override else resolved_mode)
+        runtime_state = LobbyRuntimeState(lobby_id=lobby.id, song_number=0, mode_config=mode_config_json)
         db.add(runtime_state)
         db.commit()
 
@@ -90,6 +120,217 @@ class GameEngine:
 
         self._lobby_modes[lobby.code] = resolved_mode
         return lobby
+
+    def update_lobby_mode(
+        self,
+        db: Session,
+        lobby_code: str,
+        preset_key: str | None = None,
+        mode_override: GameModePreset | None = None,
+    ) -> None:
+        """Update the game mode for an existing lobby and persist the config."""
+        lobby = self._find_lobby(db, lobby_code)
+        
+        # Use provided preset_key or keep existing
+        resolved_preset_key = preset_key or lobby.mode_key
+        
+        # Resolve the mode with the override if provided
+        resolved_mode = self.mode_service.resolve(resolved_preset_key, mode_override)
+        
+        # Update the lobby's mode_key
+        lobby.mode_key = resolved_mode.key
+        
+        # Serialize and persist the mode config
+        mode_config_json = self._serialize_mode(mode_override if mode_override else resolved_mode)
+        runtime_state = db.query(LobbyRuntimeState).filter(LobbyRuntimeState.lobby_id == lobby.id).first()
+        if runtime_state:
+            runtime_state.mode_config = mode_config_json
+        
+        # Update in-memory cache
+        self._lobby_modes[lobby.code] = resolved_mode
+        
+        db.commit()
+
+    def save_lobby_setup(
+        self,
+        db: Session,
+        lobby_code: str,
+        host_name: str,
+        team_names: list[str],
+        spotify_connected: bool = False,
+        mode_title: str | None = None,
+    ) -> None:
+        lobby = self._find_lobby(db, lobby_code)
+        runtime_state = self._get_or_create_lobby_runtime_state(db, lobby.id)
+
+        lobby.host_name = host_name.strip() or lobby.host_name
+        runtime_state.setup_teams = json.dumps(team_names)
+        runtime_state.spotify_connected = bool(spotify_connected)
+        if mode_title and mode_title.strip():
+            runtime_state.setup_mode_title = mode_title.strip()
+
+        self.sync_lobby_teams(db, lobby_code, team_names)
+        db.commit()
+
+    def get_lobby_setup(self, db: Session, lobby_code: str) -> dict:
+        lobby = self._find_lobby(db, lobby_code)
+        runtime_state = self._get_or_create_lobby_runtime_state(db, lobby.id)
+        teams = db.query(Team).filter(Team.lobby_id == lobby.id).order_by(Team.name.asc()).all()
+
+        parsed_teams: list[str]
+        if runtime_state.setup_teams:
+            try:
+                parsed = json.loads(runtime_state.setup_teams)
+                parsed_teams = [str(value).strip() for value in parsed if str(value).strip()]
+            except (json.JSONDecodeError, TypeError):
+                parsed_teams = [team.name for team in teams]
+        else:
+            parsed_teams = [team.name for team in teams]
+
+        return {
+            "host_name": lobby.host_name,
+            "teams": parsed_teams,
+            "preset_key": lobby.mode_key,
+            "mode_title": runtime_state.setup_mode_title or "Game Mode Details",
+            "spotify_connected": bool(runtime_state.spotify_connected),
+        }
+
+    def set_lobby_spotify_connected(self, db: Session, lobby_code: str, connected: bool) -> None:
+        lobby = self._find_lobby(db, lobby_code)
+        runtime_state = self._get_or_create_lobby_runtime_state(db, lobby.id)
+        runtime_state.spotify_connected = bool(connected)
+        db.commit()
+
+    def attach_source_to_lobby(
+        self,
+        db: Session,
+        lobby_code: str,
+        source_id: str,
+        source_type: str,
+        source_value: str,
+    ) -> None:
+        lobby = self._find_lobby(db, lobby_code)
+        source = db.query(MediaSource).filter(MediaSource.id == source_id).first()
+        if not source:
+            raise ValueError("Source not found")
+
+        existing = (
+            db.query(LobbySource)
+            .filter(LobbySource.lobby_id == lobby.id, LobbySource.source_id == source.id)
+            .first()
+        )
+        if existing:
+            existing.source_type = source_type or existing.source_type
+            existing.source_value = source_value or existing.source_value
+            db.commit()
+            return
+
+        db.add(
+            LobbySource(
+                lobby_id=lobby.id,
+                source_id=source.id,
+                source_type=(source_type or "local-folder").strip(),
+                source_value=(source_value or source.source_value).strip(),
+            )
+        )
+        db.commit()
+
+    def remove_source_from_lobby(self, db: Session, lobby_code: str, source_id: str) -> None:
+        lobby = self._find_lobby(db, lobby_code)
+        row = (
+            db.query(LobbySource)
+            .filter(LobbySource.lobby_id == lobby.id, LobbySource.source_id == source_id)
+            .first()
+        )
+        if not row:
+            return
+        db.delete(row)
+        db.commit()
+
+    def list_lobby_sources(self, db: Session, lobby_code: str) -> list[dict]:
+        lobby = self._find_lobby(db, lobby_code)
+        rows = (
+            db.query(LobbySource)
+            .filter(LobbySource.lobby_id == lobby.id)
+            .order_by(LobbySource.created_at.desc())
+            .all()
+        )
+        sources: list[dict] = []
+        for row in rows:
+            imported_count = db.query(IndexedTrack).filter(IndexedTrack.source_id == row.source_id).count()
+            sources.append(
+                {
+                    "source_id": row.source_id,
+                    "source_type": row.source_type,
+                    "source_value": row.source_value,
+                    "imported_count": imported_count,
+                }
+            )
+        return sources
+
+    def cleanup_expired_lobbies_and_orphan_links(self, db: Session) -> dict[str, int]:
+        now = datetime.utcnow()
+        missing_expiry_rows = db.query(Lobby).filter(Lobby.expires_at.is_(None)).all()
+        for lobby in missing_expiry_rows:
+            lobby.expires_at = lobby.created_at + timedelta(hours=24)
+
+        expired_lobbies = db.query(Lobby).filter(Lobby.expires_at.isnot(None), Lobby.expires_at < now).all()
+
+        deleted_lobbies = 0
+        deleted_links = 0
+        deleted_rounds = 0
+
+        for lobby in expired_lobbies:
+            round_rows = db.query(ActiveRoundState).filter(ActiveRoundState.lobby_id == lobby.id).all()
+            round_ids = [row.id for row in round_rows]
+
+            if round_ids:
+                deleted_rounds += (
+                    db.query(ActiveRoundTeamState)
+                    .filter(ActiveRoundTeamState.active_round_id.in_(round_ids))
+                    .delete(synchronize_session=False)
+                )
+
+            db.query(ActiveRoundState).filter(ActiveRoundState.lobby_id == lobby.id).delete(synchronize_session=False)
+            db.query(PlayerRuntimeState).filter(PlayerRuntimeState.lobby_id == lobby.id).delete(synchronize_session=False)
+            db.query(Player).filter(Player.lobby_id == lobby.id).delete(synchronize_session=False)
+            db.query(Team).filter(Team.lobby_id == lobby.id).delete(synchronize_session=False)
+            db.query(LobbyRuntimeState).filter(LobbyRuntimeState.lobby_id == lobby.id).delete(synchronize_session=False)
+            deleted_links += (
+                db.query(LobbySource)
+                .filter(LobbySource.lobby_id == lobby.id)
+                .delete(synchronize_session=False)
+            )
+            db.query(Lobby).filter(Lobby.id == lobby.id).delete(synchronize_session=False)
+            deleted_lobbies += 1
+
+        valid_lobby_ids = [row.id for row in db.query(Lobby.id).all()]
+        valid_source_ids = [row.id for row in db.query(MediaSource.id).all()]
+
+        if valid_lobby_ids:
+            deleted_links += (
+                db.query(LobbySource)
+                .filter(~LobbySource.lobby_id.in_(valid_lobby_ids))
+                .delete(synchronize_session=False)
+            )
+        else:
+            deleted_links += db.query(LobbySource).delete(synchronize_session=False)
+
+        if valid_source_ids:
+            deleted_links += (
+                db.query(LobbySource)
+                .filter(~LobbySource.source_id.in_(valid_source_ids))
+                .delete(synchronize_session=False)
+            )
+        else:
+            deleted_links += db.query(LobbySource).delete(synchronize_session=False)
+
+        db.commit()
+        return {
+            "deleted_lobbies": deleted_lobbies,
+            "deleted_links": deleted_links,
+            "deleted_round_team_rows": deleted_rounds,
+        }
 
     def sync_lobby_teams(self, db: Session, lobby_code: str, team_names: list[str]) -> None:
         lobby = self._find_lobby(db, lobby_code)
@@ -125,7 +366,17 @@ class GameEngine:
             issues.append("Add at least one team before starting the game.")
 
         if not settings.test_mode:
-            total_tracks = db.query(IndexedTrack).count()
+            linked_source_ids = [
+                row.source_id
+                for row in db.query(LobbySource).filter(LobbySource.lobby_id == lobby.id).all()
+            ]
+            total_tracks = (
+                db.query(IndexedTrack)
+                .filter(IndexedTrack.source_id.in_(linked_source_ids))
+                .count()
+                if linked_source_ids
+                else 0
+            )
             if total_tracks < 1:
                 issues.append("Add and index at least one media source before starting the game.")
 
@@ -176,8 +427,8 @@ class GameEngine:
 
         return provider_label
 
-    def _pick_round_media_selection(self, db: Session) -> dict:
-        media_item = self._pick_round_media_item(db)
+    def _pick_round_media_selection(self, db: Session, lobby_id: str) -> dict:
+        media_item = self._pick_round_media_item(db, lobby_id)
         provider_key = "local_files"
         track_duration_seconds = 240
         playback_ref = media_item.media_path
@@ -264,13 +515,13 @@ class GameEngine:
 
     def start_round(self, db: Session, lobby_code: str) -> None:
         lobby = self._find_lobby(db, lobby_code)
-        mode = self._get_lobby_mode(lobby)
+        mode = self._get_lobby_mode(lobby, db)
         runtime_state = self._get_or_create_lobby_runtime_state(db, lobby.id)
         song_number = runtime_state.song_number + 1
         runtime_state.song_number = song_number
         round_kind = self.mode_service.pick_round_kind(mode, song_number)
 
-        selection = self._pick_round_media_selection(db)
+        selection = self._pick_round_media_selection(db, lobby.id)
         media_item = selection["media_item"]
         snippet_offsets = self._compute_snippet_offsets(selection["track_duration_seconds"], mode.stage_durations)
         snippet_spec = SnippetSpec(kind=round_kind, duration_seconds=mode.stage_durations[0], random_start=False)
@@ -293,6 +544,7 @@ class GameEngine:
                 snippet_url=processed.snippet_url,
                 playback_provider=selection["provider_key"],
                 playback_ref=selection["playback_ref"],
+                playback_token=0,
                 track_duration_seconds=selection["track_duration_seconds"],
                 snippet_start_offsets=self._serialize_offsets(snippet_offsets),
             )
@@ -311,18 +563,17 @@ class GameEngine:
             active_round.snippet_url = processed.snippet_url
             active_round.playback_provider = selection["provider_key"]
             active_round.playback_ref = selection["playback_ref"]
+            active_round.playback_token = 0
             active_round.track_duration_seconds = selection["track_duration_seconds"]
             active_round.snippet_start_offsets = self._serialize_offsets(snippet_offsets)
 
         db.query(ActiveRoundTeamState).filter(ActiveRoundTeamState.active_round_id == active_round.id).delete()
 
-        self._set_playback_token(lobby_code, 0)
-
         db.commit()
 
     def play_stage(self, db: Session, lobby_code: str, stage_index: int) -> bool:
         lobby = self._find_lobby(db, lobby_code)
-        mode = self._get_lobby_mode(lobby)
+        mode = self._get_lobby_mode(lobby, db)
         round_state = self._get_active_round(db, lobby.id)
         if not round_state:
             raise ValueError("No active round")
@@ -350,7 +601,7 @@ class GameEngine:
         round_state.max_stage_reached = max(current_max_stage, stage_index)
         round_state.can_guess = False
         round_state.status = "playing"
-        self._bump_playback_token(lobby_code)
+        round_state.playback_token = max(0, int(round_state.playback_token or 0)) + 1
         db.commit()
         return True
 
@@ -363,7 +614,7 @@ class GameEngine:
         round_state.can_guess = False
         db.commit()
 
-    def _pick_round_media_item(self, db: Session) -> MediaItem:
+    def _pick_round_media_item(self, db: Session, lobby_id: str) -> MediaItem:
         if settings.test_mode:
             return MediaItem(
                 source_id="placeholder-1",
@@ -372,9 +623,14 @@ class GameEngine:
                 media_path="placeholder",
             )
 
+        linked_source_ids = [
+            row.source_id
+            for row in db.query(LobbySource).filter(LobbySource.lobby_id == lobby_id).all()
+        ]
         indexed_rows = (
             db.query(IndexedTrack, MediaSource)
             .join(MediaSource, IndexedTrack.source_id == MediaSource.id)
+            .filter(IndexedTrack.source_id.in_(linked_source_ids))
             .all()
         )
         playable_items: list[MediaItem] = []
@@ -425,7 +681,7 @@ class GameEngine:
         if not round_state or not round_state.can_guess:
             raise ValueError("No guess window active")
 
-        mode = self._get_lobby_mode(lobby)
+        mode = self._get_lobby_mode(lobby, db)
         correct = (
             round_state.media_title.strip().lower() == title.strip().lower()
             and round_state.media_artist.strip().lower() == artist.strip().lower()
@@ -445,7 +701,7 @@ class GameEngine:
 
     def next_stage(self, db: Session, lobby_code: str) -> bool:
         lobby = self._find_lobby(db, lobby_code)
-        mode = self._get_lobby_mode(lobby)
+        mode = self._get_lobby_mode(lobby, db)
         round_state = self._get_active_round(db, lobby.id)
         if not round_state:
             raise ValueError("No active round")
@@ -472,7 +728,7 @@ class GameEngine:
         if normalized_fact not in {"artist", "title"}:
             raise ValueError("Fact must be either 'artist' or 'title'")
 
-        mode = self._get_lobby_mode(lobby)
+        mode = self._get_lobby_mode(lobby, db)
         max_stage_reached = int(round_state.max_stage_reached or round_state.stage_index)
         points_stage = max(0, min(len(mode.stage_points) - 1, max_stage_reached))
         fact_points = mode.stage_points[points_stage]
@@ -547,7 +803,7 @@ class GameEngine:
         if not team:
             raise ValueError("Team not found")
 
-        mode = self._get_lobby_mode(lobby)
+        mode = self._get_lobby_mode(lobby, db)
         penalty = max(0, int(mode.wrong_guess_penalty))
         if penalty < 1:
             return
@@ -559,7 +815,7 @@ class GameEngine:
         lobby = self._find_lobby(db, lobby_code)
         teams = db.query(Team).filter(Team.lobby_id == lobby.id).order_by(Team.name.asc()).all()
         players = db.query(Player).filter(Player.lobby_id == lobby.id).order_by(Player.name.asc()).all()
-        mode = self._get_lobby_mode(lobby)
+        mode = self._get_lobby_mode(lobby, db)
 
         runtime = self._get_active_round(db, lobby.id)
         current_round = None
@@ -595,7 +851,7 @@ class GameEngine:
                 },
                 can_guess=runtime.can_guess,
                 status=runtime.status,
-                playback_token=self._get_playback_token(lobby_code),
+                playback_token=max(0, int(runtime.playback_token or 0)),
                 reveal_title=reveal_title,
                 reveal_artist=reveal_artist,
                 reveal_source=reveal_source,
@@ -688,12 +944,29 @@ class GameEngine:
         lobby = db.query(Lobby).filter(Lobby.code == lobby_code).first()
         if not lobby:
             raise ValueError("Lobby not found")
+
+        if lobby.expires_at is None:
+            lobby.expires_at = lobby.created_at + timedelta(hours=24)
+            db.commit()
+
+        if datetime.utcnow() > lobby.expires_at:
+            raise ValueError("Lobby has expired")
         return lobby
 
-    def _get_lobby_mode(self, lobby: Lobby) -> GameModePreset:
+    def _get_lobby_mode(self, lobby: Lobby, db: Session | None = None) -> GameModePreset:
         mode = self._lobby_modes.get(lobby.code)
         if mode:
             return mode
+
+        # Check if there's a persisted mode config in the runtime state
+        if db:
+            runtime_state = db.query(LobbyRuntimeState).filter(LobbyRuntimeState.lobby_id == lobby.id).first()
+            if runtime_state and runtime_state.mode_config:
+                deserialized = self._deserialize_mode(runtime_state.mode_config, lobby.mode_key)
+                if deserialized:
+                    resolved = deserialized
+                    self._lobby_modes[lobby.code] = resolved
+                    return resolved
 
         try:
             resolved = self.mode_service.resolve(lobby.mode_key)

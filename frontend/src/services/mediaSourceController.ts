@@ -25,6 +25,7 @@ export async function addSource(params: {
   sourceType: SourceType;
   sourceValue: string;
   pendingLocalFileCount: number;
+  lobbyCode?: string;
 }): Promise<LocalSource> {
   const sourceValue = params.sourceValue.trim();
   if (!sourceValue) {
@@ -41,6 +42,8 @@ export async function addSource(params: {
   const orchestrated = await api.addSourceOrchestrated(
     providerKeyByType[params.sourceType],
     sourceValue,
+    params.lobbyCode,
+    params.sourceType,
   );
 
   return {
