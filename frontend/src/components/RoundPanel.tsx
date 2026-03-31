@@ -1,5 +1,6 @@
 import { AnimatePresence, motion } from 'framer-motion';
 
+import { DEFAULT_ROUND_STAGE_COUNT, UNKNOWN_REVEAL_VALUE } from '../config/defaults';
 import type { RoundState } from '../types';
 import { Button, Card, StatusChip } from './ui';
 
@@ -25,7 +26,7 @@ export function RoundPanel({
   finishGameLoading = false,
 }: Props) {
   const isFinished = round?.status === 'finished';
-  const stageCount = round?.snippet_start_offsets?.length || 3;
+  const stageCount = round?.snippet_start_offsets?.length || DEFAULT_ROUND_STAGE_COUNT;
   const mustRevealBeforeFinish = hasWinnerLock && !isFinished;
 
   const getButtonState = (targetStage: number): { disabled: boolean; label: string } => {
@@ -101,8 +102,8 @@ export function RoundPanel({
                   exit={{ opacity: 0, y: -6 }}
                   transition={{ duration: 0.2 }}
                 >
-                  <p><strong>Artist:</strong> {round.reveal_artist || 'Unknown'}</p>
-                  <p><strong>Title:</strong> {round.reveal_title || 'Unknown'}</p>
+                  <p><strong>Artist:</strong> {round.reveal_artist || UNKNOWN_REVEAL_VALUE}</p>
+                  <p><strong>Title:</strong> {round.reveal_title || UNKNOWN_REVEAL_VALUE}</p>
                   <p><strong>Source:</strong> {round.reveal_source || round.playback_provider}</p>
                 </motion.div>
               )}

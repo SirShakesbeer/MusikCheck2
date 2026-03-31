@@ -14,7 +14,6 @@ class Settings(BaseSettings):
     media_root: str = "media"
     test_mode: bool = False
     youtube_api_key: str | None = None
-    youtube_default_playlist: str | None = None
     spotify_client_id: str | None = None
     spotify_client_secret: str | None = None
     spotify_redirect_uri: str = "http://127.0.0.1:8000/api/spotify/callback"

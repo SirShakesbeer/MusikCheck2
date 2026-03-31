@@ -2,14 +2,15 @@ import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
 
 import { Button, Card, Field, StatusChip } from '../components/ui';
+import { DEFAULT_PLAYER_NAME, DEFAULT_PLAYER_TEAM_NAME } from '../config/defaults';
 import { api } from '../services/api';
 import { connectLobbySocket } from '../services/ws';
 import type { GameState } from '../types';
 
 export function PlayerPage() {
   const { code = '' } = useParams();
-  const [playerName, setPlayerName] = useState('Player');
-  const [teamName, setTeamName] = useState('Team A');
+  const [playerName, setPlayerName] = useState(DEFAULT_PLAYER_NAME);
+  const [teamName, setTeamName] = useState(DEFAULT_PLAYER_TEAM_NAME);
   const [guessTitle, setGuessTitle] = useState('');
   const [guessArtist, setGuessArtist] = useState('');
   const [state, setState] = useState<GameState | null>(null);

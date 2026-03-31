@@ -6,12 +6,13 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-
-ROUND_TYPE_PHONE_REQUIREMENTS: dict[str, bool] = {
-    "audio": False,
-    "video": False,
-    "lyrics": True,
-}
+from app.core.defaults import (
+    DEFAULT_BONUS_POINTS_BOTH,
+    DEFAULT_PRESET_KEY,
+    DEFAULT_REQUIRED_POINTS_TO_WIN,
+    DEFAULT_WRONG_GUESS_PENALTY,
+    ROUND_TYPE_PHONE_REQUIREMENTS,
+)
 
 
 @dataclass
@@ -27,9 +28,9 @@ class GameModePreset:
     stage_durations: list[int]
     stage_points: list[int]
     round_rules: list[RoundTypeRule]
-    bonus_points_both: int = 1
-    wrong_guess_penalty: int = 0
-    required_points_to_win: int = 15
+    bonus_points_both: int = DEFAULT_BONUS_POINTS_BOTH
+    wrong_guess_penalty: int = DEFAULT_WRONG_GUESS_PENALTY
+    required_points_to_win: int = DEFAULT_REQUIRED_POINTS_TO_WIN
     filters: dict[str, Any] = field(default_factory=dict)
 
     def validate(self) -> None:
@@ -105,9 +106,9 @@ class GameModePreset:
             stage_durations=[int(value) for value in (payload.get("stage_durations") or [])],
             stage_points=[int(value) for value in (payload.get("stage_points") or [])],
             round_rules=rules,
-            bonus_points_both=int(payload.get("bonus_points_both", 1)),
-            wrong_guess_penalty=int(payload.get("wrong_guess_penalty", 0)),
-            required_points_to_win=int(payload.get("required_points_to_win", 15)),
+            bonus_points_both=int(payload.get("bonus_points_both", DEFAULT_BONUS_POINTS_BOTH)),
+            wrong_guess_penalty=int(payload.get("wrong_guess_penalty", DEFAULT_WRONG_GUESS_PENALTY)),
+            required_points_to_win=int(payload.get("required_points_to_win", DEFAULT_REQUIRED_POINTS_TO_WIN)),
             filters=payload.get("filters") if isinstance(payload.get("filters"), dict) else {},
         )
         preset.validate()
@@ -137,7 +138,7 @@ class GameModeService:
             mode_override.validate()
             return mode_override
 
-        lookup_key = (preset_key or "classic_audio").strip()
+        lookup_key = (preset_key or DEFAULT_PRESET_KEY).strip()
         return self.get(lookup_key)
 
     def build_custom_mode(

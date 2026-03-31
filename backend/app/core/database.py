@@ -2,6 +2,12 @@ from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
 from app.core.config import settings
+from app.core.defaults import (
+    DEFAULT_MODE_TITLE,
+    DEFAULT_PLAYBACK_PROVIDER,
+    DEFAULT_SNIPPET_START_OFFSETS,
+    DEFAULT_TRACK_DURATION_SECONDS,
+)
 
 
 class Base(DeclarativeBase):
@@ -21,11 +27,11 @@ def apply_schema_patches() -> None:
         ],
         "active_round_states": [
             "ADD COLUMN max_stage_reached INTEGER DEFAULT 0",
-            "ADD COLUMN playback_provider VARCHAR(64) DEFAULT 'local_files'",
+            f"ADD COLUMN playback_provider VARCHAR(64) DEFAULT '{DEFAULT_PLAYBACK_PROVIDER}'",
             "ADD COLUMN playback_ref VARCHAR(2048) DEFAULT ''",
             "ADD COLUMN playback_token INTEGER DEFAULT 0",
-            "ADD COLUMN track_duration_seconds INTEGER DEFAULT 240",
-            "ADD COLUMN snippet_start_offsets VARCHAR(256) DEFAULT '0,0,0'",
+            f"ADD COLUMN track_duration_seconds INTEGER DEFAULT {DEFAULT_TRACK_DURATION_SECONDS}",
+            f"ADD COLUMN snippet_start_offsets VARCHAR(256) DEFAULT '{DEFAULT_SNIPPET_START_OFFSETS}'",
         ],
         "active_round_team_states": [
             "ADD COLUMN artist_awarded_stage INTEGER",
@@ -34,7 +40,7 @@ def apply_schema_patches() -> None:
         "lobby_runtime_states": [
             "ADD COLUMN mode_config TEXT DEFAULT ''",
             "ADD COLUMN setup_teams TEXT DEFAULT ''",
-            "ADD COLUMN setup_mode_title VARCHAR(128) DEFAULT 'Game Mode Details'",
+            f"ADD COLUMN setup_mode_title VARCHAR(128) DEFAULT '{DEFAULT_MODE_TITLE}'",
             "ADD COLUMN spotify_connected BOOLEAN DEFAULT FALSE",
         ],
     }

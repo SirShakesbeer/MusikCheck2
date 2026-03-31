@@ -58,5 +58,37 @@
       "release_year_to": null,
       "language": ""
     }
+  },
+  {
+    "key": "standard-musikcheck-experience",
+    "name": "Standard MusikCheck Experience",
+    "stage_durations": [
+      1,
+      2,
+      3
+    ],
+    "stage_points": [
+      3,
+      2,
+      1
+    ],
+    "bonus_points_both": 1,
+    "wrong_guess_penalty": 1,
+    "required_points_to_win": 42,
+    "round_rules": [
+      {
+        "kind": "audio",
+        "every_n_songs": 1
+      },
+      {
+        "kind": "video",
+        "every_n_songs": 4
+      }
+    ],
+    "filters": {
+      "release_year_from": null,
+      "release_year_to": null,
+      "language": null
+    }
   }
 ]

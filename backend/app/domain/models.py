@@ -4,6 +4,12 @@ from datetime import datetime, timedelta
 from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from app.core.defaults import (
+    DEFAULT_MODE_TITLE,
+    DEFAULT_PLAYBACK_PROVIDER,
+    DEFAULT_SNIPPET_START_OFFSETS,
+    DEFAULT_TRACK_DURATION_SECONDS,
+)
 from app.core.database import Base
 
 
@@ -52,7 +58,7 @@ class LobbyRuntimeState(Base):
     song_number: Mapped[int] = mapped_column(Integer, default=0)
     mode_config: Mapped[str] = mapped_column(Text, default="", nullable=True)
     setup_teams: Mapped[str] = mapped_column(Text, default="", nullable=True)
-    setup_mode_title: Mapped[str] = mapped_column(String(128), default="Game Mode Details")
+    setup_mode_title: Mapped[str] = mapped_column(String(128), default=DEFAULT_MODE_TITLE)
     spotify_connected: Mapped[bool] = mapped_column(Boolean, default=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -82,11 +88,11 @@ class ActiveRoundState(Base):
     can_guess: Mapped[bool] = mapped_column(Boolean, default=False)
     status: Mapped[str] = mapped_column(String(64), default="playing")
     snippet_url: Mapped[str] = mapped_column(String(2048))
-    playback_provider: Mapped[str] = mapped_column(String(64), default="local_files")
+    playback_provider: Mapped[str] = mapped_column(String(64), default=DEFAULT_PLAYBACK_PROVIDER)
     playback_ref: Mapped[str] = mapped_column(String(2048), default="")
     playback_token: Mapped[int] = mapped_column(Integer, default=0)
-    track_duration_seconds: Mapped[int] = mapped_column(Integer, default=240)
-    snippet_start_offsets: Mapped[str] = mapped_column(String(256), default="0,0,0")
+    track_duration_seconds: Mapped[int] = mapped_column(Integer, default=DEFAULT_TRACK_DURATION_SECONDS)
+    snippet_start_offsets: Mapped[str] = mapped_column(String(256), default=DEFAULT_SNIPPET_START_OFFSETS)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 

@@ -1,11 +1,12 @@
 from pydantic import BaseModel, Field
 
+from app.core.defaults import DEFAULT_PRESET_KEY
 from app.schemas.game_mode import GameModePresetConfig, GameModePresetState
 
 
 class CreateLobbyRequest(BaseModel):
     host_name: str = Field(min_length=1, max_length=64)
-    preset_key: str = Field(default="classic_audio", min_length=1)
+    preset_key: str = Field(default=DEFAULT_PRESET_KEY, min_length=1)
     mode_config: GameModePresetConfig | None = None
     teams: list[str] = []
     save_as_preset: bool = False

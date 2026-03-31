@@ -23,11 +23,12 @@ import type {
   LobbySourcesEnvelope,
   SaveLobbySetupPayload,
 } from '../types';
+import { API_BASE_URL, API_RETRY_DEFAULTS } from '../config/defaults';
 
-const API_BASE = import.meta.env.VITE_API_BASE ?? 'http://localhost:8000/api';
+const API_BASE = API_BASE_URL;
 
-const RETRY_ATTEMPTS = 3;
-const RETRY_DELAY_MS = 250;
+const RETRY_ATTEMPTS = API_RETRY_DEFAULTS.attempts;
+const RETRY_DELAY_MS = API_RETRY_DEFAULTS.delayMs;
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => window.setTimeout(resolve, ms));

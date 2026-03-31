@@ -1,12 +1,13 @@
 import type { GameModeConfig, GameModePresetState } from '../types';
+import { MODE_FORM_DEFAULTS } from '../config/defaults';
 
-export const LOCAL_STAGE_DURATIONS_DEFAULT = [2, 5, 8];
-export const LOCAL_STAGE_POINTS = [3, 2, 1];
-export const LOCAL_BOTH_BONUS_POINTS = 1;
-export const LOCAL_WRONG_GUESS_PENALTY = 1;
-export const LOCAL_REQUIRED_POINTS_TO_WIN = 15;
+export const LOCAL_STAGE_DURATIONS_DEFAULT = [...MODE_FORM_DEFAULTS.stageDurations];
+export const LOCAL_STAGE_POINTS = [...MODE_FORM_DEFAULTS.stagePoints];
+export const LOCAL_BOTH_BONUS_POINTS = MODE_FORM_DEFAULTS.bonusPointsBoth;
+export const LOCAL_WRONG_GUESS_PENALTY = MODE_FORM_DEFAULTS.wrongGuessPenalty;
+export const LOCAL_REQUIRED_POINTS_TO_WIN = MODE_FORM_DEFAULTS.requiredPointsToWin;
 
-export const ROUND_TYPES_REQUIRING_PHONES = new Set(['lyrics']);
+export const ROUND_TYPES_REQUIRING_PHONES = new Set<string>(MODE_FORM_DEFAULTS.roundTypesRequiringPhones);
 
 export type ModeFormValues = {
   audioEnabled: boolean;
@@ -34,9 +35,9 @@ export function getDefaultModeFormValues(): ModeFormValues {
     audioEnabled: true,
     videoEnabled: true,
     lyricsEnabled: true,
-    audioEverySongs: '1',
-    videoEverySongs: '5',
-    lyricsEverySongs: '10',
+    audioEverySongs: String(MODE_FORM_DEFAULTS.audioEverySongs),
+    videoEverySongs: String(MODE_FORM_DEFAULTS.videoEverySongs),
+    lyricsEverySongs: String(MODE_FORM_DEFAULTS.lyricsEverySongs),
     releaseYearFrom: '',
     releaseYearTo: '',
     language: '',

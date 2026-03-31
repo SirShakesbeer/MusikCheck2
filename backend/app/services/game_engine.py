@@ -702,11 +702,6 @@ class GameEngine:
                     source_lookup = {entry["source_id"]: entry for entry in source_counts}
                     return self._build_media_item_from_track(selected_track, source_lookup[selected_source_id]["provider_key"])
 
-        if settings.youtube_default_playlist:
-            items = self.media_ingestion.import_from_source("youtube_playlist", settings.youtube_default_playlist)
-            if items:
-                return random.choice(items)
-
         raise ValueError(
             "No playable media available. Add/index a local, YouTube, or Spotify source, or enable TEST_MODE."
         )

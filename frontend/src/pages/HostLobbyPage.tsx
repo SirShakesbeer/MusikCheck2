@@ -4,6 +4,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { RoundPanel } from '../components/RoundPanel';
 import { Scoreboard } from '../components/Scoreboard';
 import { Button, Card, StatusChip } from '../components/ui';
+import { DEFAULT_SCOREBOARD_MAX_POINTS } from '../config/defaults';
 import { api } from '../services/api';
 import { RoundPlaybackDispatcher } from '../services/playbackDispatcher';
 import { connectLobbySocket } from '../services/ws';
@@ -399,7 +400,7 @@ export function HostLobbyPage() {
         )}
       </Card>
 
-      <Scoreboard teams={state?.teams ?? []} maxPoints={state?.mode?.required_points_to_win ?? 1} />
+      <Scoreboard teams={state?.teams ?? []} maxPoints={state?.mode?.required_points_to_win ?? DEFAULT_SCOREBOARD_MAX_POINTS} />
 
       {finishGameOpen && (
         <div className="finish-game-overlay" role="dialog" aria-modal="true" aria-label="Finish game dialog">

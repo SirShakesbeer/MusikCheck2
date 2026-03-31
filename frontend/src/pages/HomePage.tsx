@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 import { Button, Card, StatusChip } from '../components/ui';
+import { DEFAULT_HOST_NAME, DEFAULT_PRESET_KEY, DEFAULT_TEAM_NAMES } from '../config/defaults';
 import { api } from '../services/api';
 
 export function HomePage() {
@@ -13,9 +14,9 @@ export function HomePage() {
     setBusy(true);
     try {
       const result = await api.createLobby({
-        host_name: 'Host',
-        preset_key: 'classic_audio',
-        teams: ['Team A', 'Team B'],
+        host_name: DEFAULT_HOST_NAME,
+        preset_key: DEFAULT_PRESET_KEY,
+        teams: [...DEFAULT_TEAM_NAMES],
       });
       setError(null);
       navigate(`/host/setup/${result.data.lobby_code}`);
@@ -29,12 +30,11 @@ export function HomePage() {
   return (
     <main>
       <Card>
-        <StatusChip>Party Quiz Prototype</StatusChip>
-        <h1 className="page-heading mt-2">MusikCheck2</h1>
-        <p className="page-subheading">Create a lobby in seconds and run a loud, colorful music battle like a game show.</p>
+        <h1 className="page-heading mt-2">MusikCheck 2</h1>
+        <p className="page-subheading">The classic Thomasius music quiz with a modern twist.</p>
       </Card>
 
-      <Card title="Choose Your Role" subtitle="Hosts configure rounds and scoring. Players join with a lobby code and compete live.">
+      <Card title="Choose Your Role" subtitle="Hosts configure rounds and scoring. Players join with a lobby code and can interact with their phone.">
         <div className="source-row">
           <Button onClick={onHost} disabled={busy}>
             {busy ? 'Creating Lobby...' : 'Host Game'}
@@ -48,18 +48,12 @@ export function HomePage() {
       <Card title="How It Flows">
         <div className="source-list">
           <p className="muted-copy">1. Host sets teams, game mode, and music sources.</p>
-          <p className="muted-copy">2. Players join from phones and set ready.</p>
+          <p className="muted-copy">2. (OPTIONAL) Players join from phones and set ready.</p>
           <p className="muted-copy">3. Round snippets play, teams race to guess title and artist.</p>
         </div>
       </Card>
 
       {error && <p className="danger-text">{error}</p>}
-
-      <div className="source-row mt-2">
-        <Button onClick={onHost} disabled={busy} variant="secondary">
-          {busy ? 'Creating Lobby...' : 'Quick Start'}
-        </Button>
-      </div>
     </main>
   );
 }

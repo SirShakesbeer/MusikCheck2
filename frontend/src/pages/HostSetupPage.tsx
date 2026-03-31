@@ -6,6 +6,12 @@ import { GameModeSelectionTab } from '../components/tabs/GameModeSelectionTab';
 import { RuleConfigurationTab } from '../components/tabs/RuleConfigurationTab';
 import { SourcePlayerControlTab } from '../components/tabs/SourcePlayerControlTab';
 import { Button, Card, StatusChip } from '../components/ui';
+import {
+  DEFAULT_HOST_NAME,
+  DEFAULT_MODE_DETAILS_TITLE,
+  DEFAULT_PRESET_KEY,
+  DEFAULT_SETUP_TEAMS_TEXT,
+} from '../config/defaults';
 import { api } from '../services/api';
 import {
   buildFormValuesFromPreset,
@@ -55,17 +61,17 @@ export function HostSetupPage() {
   const launchTransitionTimeoutRef = useRef<number | null>(null);
   const [activeTab, setActiveTab] = useState<SetupTab>('startscreen');
 
-  const [hostName, setHostName] = useState('Host');
-  const [setupTeams, setSetupTeams] = useState('Team A, Team B');
+  const [hostName, setHostName] = useState(DEFAULT_HOST_NAME);
+  const [setupTeams, setSetupTeams] = useState(DEFAULT_SETUP_TEAMS_TEXT);
   const [localSources, setLocalSources] = useState<LocalSource[]>([]);
   const [newSourceType, setNewSourceType] = useState<SourceType>('local-folder');
   const [newSourceValue, setNewSourceValue] = useState('');
   const [pendingLocalFileCount, setPendingLocalFileCount] = useState<number>(0);
 
   const [gameModes, setGameModes] = useState<GameModePresetState[]>([]);
-  const [selectedPresetKey, setSelectedPresetKey] = useState<string>('classic_audio');
+  const [selectedPresetKey, setSelectedPresetKey] = useState<string>(DEFAULT_PRESET_KEY);
   const [modeDetailsEditable, setModeDetailsEditable] = useState<boolean>(false);
-  const [modeDetailsTitle, setModeDetailsTitle] = useState<string>('Game Mode Details');
+  const [modeDetailsTitle, setModeDetailsTitle] = useState<string>(DEFAULT_MODE_DETAILS_TITLE);
 
   const [modeFormValues, setModeFormValues] = useState<ModeFormValues>(getDefaultModeFormValues());
 
@@ -120,7 +126,7 @@ export function HostSetupPage() {
         setGameModes(modes.data);
 
         if (modes.data.length > 0 && !code.trim()) {
-          const defaultPreset = modes.data.find((preset) => preset.key === 'classic_audio') ?? modes.data[0];
+          const defaultPreset = modes.data.find((preset) => preset.key === DEFAULT_PRESET_KEY) ?? modes.data[0];
           setSelectedPresetKey(defaultPreset.key);
           setModeDetailsTitle(defaultPreset.name);
           setModeFormValues(buildFormValuesFromPreset(defaultPreset));
@@ -150,10 +156,10 @@ export function HostSetupPage() {
         ]);
 
         setState(stateResult.data);
-        setHostName(setupResult.data.host_name || 'Host');
+        setHostName(setupResult.data.host_name || DEFAULT_HOST_NAME);
         setSetupTeams(setupResult.data.teams.join(', '));
-        setSelectedPresetKey(setupResult.data.preset_key || stateResult.data.mode_key || 'classic_audio');
-        setModeDetailsTitle(setupResult.data.mode_title || stateResult.data.mode.name || 'Game Mode Details');
+        setSelectedPresetKey(setupResult.data.preset_key || stateResult.data.mode_key || DEFAULT_PRESET_KEY);
+        setModeDetailsTitle(setupResult.data.mode_title || stateResult.data.mode.name || DEFAULT_MODE_DETAILS_TITLE);
         setModeFormValues(buildFormValuesFromPreset(stateResult.data.mode));
         setSpotifyConnected(Boolean(setupResult.data.spotify_connected));
         setLocalSources(
