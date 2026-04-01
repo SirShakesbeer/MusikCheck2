@@ -469,90 +469,95 @@ export function HostSetupPage() {
       <main>
         <Card>
           <StatusChip>Host Control Room</StatusChip>
-          <h1 className="page-heading mt-2">MusikCheck2 Setup</h1>
-          <p className="page-subheading">Configure mode, rules, and media sources before opening the lobby floor.</p>
+          <h1 className="page-heading mt-2">MusikCheck 2 Setup</h1>
         </Card>
 
-      <div className="source-row mb-4">
-        <Button
-          onClick={() => setActiveTab('startscreen')}
-          disabled={activeTab === 'startscreen'}
-          variant={activeTab === 'startscreen' ? 'secondary' : 'ghost'}
-        >
-          Startscreen
-        </Button>
-        <Button
-          onClick={() => setActiveTab('rules')}
-          disabled={activeTab === 'rules'}
-          variant={activeTab === 'rules' ? 'secondary' : 'ghost'}
-        >
-          Rule Configuration
-        </Button>
-        <Button
-          onClick={() => setActiveTab('sources')}
-          disabled={activeTab === 'sources'}
-          variant={activeTab === 'sources' ? 'secondary' : 'ghost'}
-        >
-          Source And Player Control
-        </Button>
-      </div>
+        <Card>
+    
+          <div className="tab-header-row mb-4">
+            <Button
+              className="tab-header-btn"
+              onClick={() => setActiveTab('startscreen')}
+              disabled={activeTab === 'startscreen'}
+              variant={activeTab === 'startscreen' ? 'secondary' : 'ghost'}
+            >
+              Game Mode
+            </Button>
+            <Button
+              className="tab-header-btn"
+              onClick={() => setActiveTab('rules')}
+              disabled={activeTab === 'rules'}
+              variant={activeTab === 'rules' ? 'secondary' : 'ghost'}
+            >
+              Rules
+            </Button>
+            <Button
+              className="tab-header-btn"
+              onClick={() => setActiveTab('sources')}
+              disabled={activeTab === 'sources'}
+              variant={activeTab === 'sources' ? 'secondary' : 'ghost'}
+            >
+              Sources And Players
+            </Button>
+          </div>
 
-      {activeTab === 'startscreen' && (
-        <GameModeSelectionTab
-          gameModes={gameModes}
-          runtimeTestMode={runtimeTestMode}
-          runtimeConfigBusy={runtimeConfigBusy}
-          youtubeApiConfigured={youtubeApiConfigured}
-          spotifyConnected={spotifyConnected}
-          spotifyAuthBusy={spotifyAuthBusy}
-          onToggleRuntimeTestMode={onToggleRuntimeTestMode}
-          onConnectSpotify={connectSpotify}
-          onSelectPreset={onSelectPreset}
-          onSelectCustom={onSelectCustom}
-        />
-      )}
+          {activeTab === 'startscreen' && (
+            <GameModeSelectionTab
+              gameModes={gameModes}
+              runtimeTestMode={runtimeTestMode}
+              runtimeConfigBusy={runtimeConfigBusy}
+              youtubeApiConfigured={youtubeApiConfigured}
+              spotifyConnected={spotifyConnected}
+              spotifyAuthBusy={spotifyAuthBusy}
+              onToggleRuntimeTestMode={onToggleRuntimeTestMode}
+              onConnectSpotify={connectSpotify}
+              onSelectPreset={onSelectPreset}
+              onSelectCustom={onSelectCustom}
+            />
+          )}
 
-      {activeTab === 'rules' && (
-        <RuleConfigurationTab
-          modeDetailsTitle={modeDetailsTitle}
-          modeDetailsEditable={modeDetailsEditable}
-          modeFormValues={modeFormValues}
-          requiredPhoneRoundTypes={requiredPhoneRoundTypes}
-          saveAsPreset={saveAsPreset}
-          newPresetName={newPresetName}
-          onFieldChange={onFieldChange}
-          onSaveAsPresetChange={setSaveAsPreset}
-          onNewPresetNameChange={setNewPresetName}
-          onSavePreset={onSavePreset}
-          onContinue={() => setActiveTab('sources')}
-        />
-      )}
+          {activeTab === 'rules' && (
+            <RuleConfigurationTab
+              modeDetailsTitle={modeDetailsTitle}
+              modeDetailsEditable={modeDetailsEditable}
+              modeFormValues={modeFormValues}
+              requiredPhoneRoundTypes={requiredPhoneRoundTypes}
+              saveAsPreset={saveAsPreset}
+              newPresetName={newPresetName}
+              onFieldChange={onFieldChange}
+              onSaveAsPresetChange={setSaveAsPreset}
+              onNewPresetNameChange={setNewPresetName}
+              onSavePreset={onSavePreset}
+              onContinue={() => setActiveTab('sources')}
+            />
+          )}
 
-      {activeTab === 'sources' && (
-        <SourcePlayerControlTab
-          hostName={hostName}
-          setupTeams={setupTeams}
-          newSourceType={newSourceType}
-          newSourceValue={newSourceValue}
-          localSources={localSources}
-          state={state}
-          startGameBusy={startGameBusy}
-          startGameDisabled={startGameDisabled}
-          startGameHint={startGameHint}
-          folderInputRef={folderInputRef}
-          onHostNameChange={setHostName}
-          onSetupTeamsChange={setSetupTeams}
-          onSourceTypeChange={setNewSourceType}
-          onSourceValueChange={setNewSourceValue}
-          onPickLocalFolder={pickLocalFolder}
-          onAddSource={addLocalSource}
-          onRemoveSource={removeLocalSource}
-          onFolderFilesSelected={onFolderFilesSelected}
-          onStartGame={startGame}
-        />
-      )}
+          {activeTab === 'sources' && (
+            <SourcePlayerControlTab
+              hostName={hostName}
+              setupTeams={setupTeams}
+              newSourceType={newSourceType}
+              newSourceValue={newSourceValue}
+              localSources={localSources}
+              state={state}
+              startGameBusy={startGameBusy}
+              startGameDisabled={startGameDisabled}
+              startGameHint={startGameHint}
+              folderInputRef={folderInputRef}
+              onHostNameChange={setHostName}
+              onSetupTeamsChange={setSetupTeams}
+              onSourceTypeChange={setNewSourceType}
+              onSourceValueChange={setNewSourceValue}
+              onPickLocalFolder={pickLocalFolder}
+              onAddSource={addLocalSource}
+              onRemoveSource={removeLocalSource}
+              onFolderFilesSelected={onFolderFilesSelected}
+              onStartGame={startGame}
+            />
+          )}
 
-        {error && <p className="danger-text">{error}</p>}
+            {error && <p className="danger-text">{error}</p>}
+        </Card>
       </main>
 
       <AnimatePresence>

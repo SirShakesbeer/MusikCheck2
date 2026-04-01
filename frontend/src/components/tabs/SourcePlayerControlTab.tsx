@@ -54,7 +54,7 @@ export function SourcePlayerControlTab({
   onStartGame,
 }: Props) {
   return (
-    <Card title="Source And Player Control" subtitle="Add media sources and monitor connected players before starting the lobby page.">
+    <div>
 
       <Field label="Host name">
         <input value={hostName} onChange={(event: ChangeEvent<HTMLInputElement>) => onHostNameChange(event.target.value)} />
@@ -150,6 +150,6 @@ export function SourcePlayerControlTab({
         {startGameBusy ? 'Starting...' : 'Start Game'}
       </Button>
       {startGameHint && <p className="danger-text mt-2">{startGameHint}</p>}
-    </Card>
+    </div>
   );
 }

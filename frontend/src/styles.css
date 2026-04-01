@@ -100,6 +100,21 @@
 }
 
 @layer components {
+  .tab-header-row {
+    @apply flex w-full rounded-xl overflow-hidden;
+  }
+  .tab-header-btn {
+    @apply flex-1 rounded-none border-0 bg-transparent text-white font-semibold text-base py-3 px-0 transition-none;
+    min-width: 0;
+  }
+  .tab-header-btn:disabled,
+  .tab-header-btn[aria-disabled='true'] {
+    @apply bg-mc-lime text-mc-ink;
+  }
+  .tab-header-btn:not(:last-child) {
+    @apply border-r border-white/10;
+  }
+
   .source-list {
     @apply mt-3 grid gap-3;
   }

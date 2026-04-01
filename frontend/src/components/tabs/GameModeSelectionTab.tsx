@@ -29,8 +29,7 @@ export function GameModeSelectionTab({
   onSelectCustom,
 }: Props) {
   return (
-    <Card title="Select Game Mode" subtitle="Choose a preset card or create a custom game mode.">
-
+    <div>
       <label className="mb-3 flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-cyan-50">
         <input
           type="checkbox"
@@ -73,6 +72,6 @@ export function GameModeSelectionTab({
           <span>Create your own round mix and frequencies</span>
         </Button>
       </div>
-    </Card>
+    </div>
   );
 }

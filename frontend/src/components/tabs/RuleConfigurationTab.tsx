@@ -31,13 +31,13 @@ export function RuleConfigurationTab({
   onContinue,
 }: Props) {
   return (
-    <Card
-      title={modeDetailsTitle || 'Game Mode Details'}
-      subtitle={modeDetailsEditable
+    <div>
+      <p>
+        {modeDetailsEditable
         ? 'Configure round types and frequencies.'
         : 'Preset settings are read-only. You can continue or pick another tab.'}
-    >
-
+      </p>
+      
       <div className="source-row">
         <label className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-cyan-50">
           <input
@@ -252,6 +252,6 @@ export function RuleConfigurationTab({
       <div className="source-row mt-3">
         <Button onClick={onContinue} variant="secondary">Continue to Sources And Players</Button>
       </div>
-    </Card>
+    </div>
   );
 }
