@@ -34,7 +34,7 @@ class SpotifyPlaylistProvider(MediaProvider):
         items: list[MediaItem] = []
         next_url = (
             f"https://api.spotify.com/v1/playlists/{playlist_id}/tracks"
-            "?fields=items(track(id,name,duration_ms,artists(name),external_urls(spotify))),next&limit=100"
+            "?fields=items(track(id,name,duration_ms,artists(name),external_urls(spotify),album(release_date,release_date_precision))),next&limit=100"
         )
         while next_url:
             payload = self._spotify_get(next_url, access_token)
@@ -50,6 +50,7 @@ class SpotifyPlaylistProvider(MediaProvider):
                 artist = ", ".join([name for name in artist_names if name]) or "Unknown Artist"
                 duration_ms = int(track.get("duration_ms") or 0)
                 external_url = str((track.get("external_urls") or {}).get("spotify") or "").strip()
+                release_year = self._extract_release_year(track.get("album") or {})
 
                 items.append(
                     MediaItem(
@@ -58,6 +59,7 @@ class SpotifyPlaylistProvider(MediaProvider):
                         artist=artist,
                         media_path=external_url or f"https://open.spotify.com/track/{track_id}",
                         duration_seconds=(duration_ms // 1000) if duration_ms > 0 else None,
+                        release_year=release_year,
                     )
                 )
 
@@ -92,6 +94,15 @@ class SpotifyPlaylistProvider(MediaProvider):
             if playlist_index + 1 < len(parts):
                 return parts[playlist_index + 1]
 
+        return None
+
+    def _extract_release_year(self, album: dict) -> int | None:
+        release_date = str(album.get("release_date") or "").strip()
+        if len(release_date) >= 4 and release_date[:4].isdigit():
+            try:
+                return int(release_date[:4])
+            except ValueError:
+                return None
         return None
 
     def _fetch_access_token(self) -> str:

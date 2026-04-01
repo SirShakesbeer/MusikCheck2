@@ -1,12 +1,13 @@
 import { ChangeEvent, RefObject } from 'react';
 
-import { Button, Card, Field, StatusChip } from '../ui';
+import { Button, Field, StatusChip } from '../ui';
 import type { LocalSource, SourceType } from '../../services/mediaSourceController';
 import type { GameState } from '../../types';
 
 type Props = {
-  hostName: string;
   setupTeams: string;
+  spotifyConnected: boolean;
+  spotifyAuthBusy: boolean;
   newSourceType: SourceType;
   newSourceValue: string;
   localSources: LocalSource[];
@@ -15,7 +16,9 @@ type Props = {
   startGameDisabled: boolean;
   startGameHint: string | null;
   folderInputRef: RefObject<HTMLInputElement>;
-  onHostNameChange: (value: string) => void;
+  youtubeApiConfigured: boolean;
+  runtimeTestMode: boolean;
+  runtimeConfigBusy: boolean;
   onSetupTeamsChange: (value: string) => void;
   onSourceTypeChange: (value: SourceType) => void;
   onSourceValueChange: (value: string) => void;
@@ -24,6 +27,8 @@ type Props = {
   onRemoveSource: (sourceId: string) => void;
   onFolderFilesSelected: (event: ChangeEvent<HTMLInputElement>) => void;
   onStartGame: () => void;
+  onConnectSpotify: () => void;
+  onToggleRuntimeTestMode: (enabled: boolean) => void;
 };
 
 const SOURCE_TYPE_OPTIONS: { value: SourceType; label: string }[] = [
@@ -33,7 +38,6 @@ const SOURCE_TYPE_OPTIONS: { value: SourceType; label: string }[] = [
 ];
 
 export function SourcePlayerControlTab({
-  hostName,
   setupTeams,
   newSourceType,
   newSourceValue,
@@ -43,7 +47,12 @@ export function SourcePlayerControlTab({
   startGameDisabled,
   startGameHint,
   folderInputRef,
-  onHostNameChange,
+  spotifyConnected,
+  spotifyAuthBusy,
+  runtimeTestMode,
+  youtubeApiConfigured,
+  runtimeConfigBusy,
+  onToggleRuntimeTestMode,
   onSetupTeamsChange,
   onSourceTypeChange,
   onSourceValueChange,
@@ -52,13 +61,10 @@ export function SourcePlayerControlTab({
   onRemoveSource,
   onFolderFilesSelected,
   onStartGame,
+  onConnectSpotify,
 }: Props) {
   return (
     <div>
-
-      <Field label="Host name">
-        <input value={hostName} onChange={(event: ChangeEvent<HTMLInputElement>) => onHostNameChange(event.target.value)} />
-      </Field>
 
       <Field label="Team names (comma-separated)">
         <input
@@ -67,6 +73,18 @@ export function SourcePlayerControlTab({
           placeholder="Team A, Team B"
         />
       </Field>
+
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <StatusChip tone={spotifyConnected ? 'ok' : 'warn'}>
+          Spotify: {spotifyConnected ? 'Connected' : 'Not connected'}
+        </StatusChip>
+        <Button onClick={onConnectSpotify} disabled={spotifyAuthBusy} variant="ghost" size="sm">
+          {spotifyAuthBusy ? 'Connecting...' : 'Connect Spotify'}
+        </Button>
+      </div>
+      {!runtimeTestMode && !youtubeApiConfigured && (
+        <p className="danger-text">YouTube API key is not configured; real YouTube ingestion will fail.</p>
+      )}
 
       <div className="source-row">
         <Field label="Source type">
@@ -145,6 +163,20 @@ export function SourcePlayerControlTab({
           )}
         </>
       )}
+
+      
+      <div className='flex items-center justify-content mt-6 ml-6'>
+        <label className="mb-3 flex flex-row items-center gap-2 text-sm font-semibold uppercase tracking-wide text-cyan-50">
+          <input
+            type="checkbox"
+            checked={runtimeTestMode}
+            onChange={(event: ChangeEvent<HTMLInputElement>) => onToggleRuntimeTestMode(event.target.checked)}
+            disabled={runtimeConfigBusy}
+            className="min-h-0 h-4 w-4"
+          />
+          <span>Test mode (placeholder media)</span>
+        </label>
+      </div>
 
       <Button onClick={onStartGame} disabled={startGameBusy || startGameDisabled} variant="secondary">
         {startGameBusy ? 'Starting...' : 'Start Game'}

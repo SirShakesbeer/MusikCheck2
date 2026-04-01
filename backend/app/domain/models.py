@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime, timedelta
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.defaults import (
@@ -135,12 +135,16 @@ class MediaSource(Base):
 
 class IndexedTrack(Base):
     __tablename__ = "indexed_tracks"
+    __table_args__ = (
+        Index("ix_indexed_tracks_source_release_year", "source_id", "release_year"),
+    )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     source_id: Mapped[str] = mapped_column(String(36), ForeignKey("media_sources.id"), index=True)
     file_path: Mapped[str] = mapped_column(String(2048), unique=True)
     title: Mapped[str] = mapped_column(String(256))
     artist: Mapped[str] = mapped_column(String(256), default="Unknown Artist")
+    release_year: Mapped[int | None] = mapped_column(Integer, nullable=True)
     file_mtime: Mapped[int] = mapped_column(Integer)
     file_size: Mapped[int] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

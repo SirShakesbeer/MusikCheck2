@@ -5,7 +5,6 @@ from app.schemas.game_mode import GameModePresetConfig, GameModePresetState
 
 
 class CreateLobbyRequest(BaseModel):
-    host_name: str = Field(min_length=1, max_length=64)
     preset_key: str = Field(default=DEFAULT_PRESET_KEY, min_length=1)
     mode_config: GameModePresetConfig | None = None
     teams: list[str] = []
@@ -20,7 +19,6 @@ class UpdateLobbyModeRequest(BaseModel):
 
 
 class SaveLobbySetupRequest(BaseModel):
-    host_name: str = Field(min_length=1, max_length=64)
     teams: list[str] = []
     preset_key: str | None = None
     mode_title: str | None = Field(default=None, max_length=128)
@@ -29,7 +27,6 @@ class SaveLobbySetupRequest(BaseModel):
 
 
 class LobbySetupState(BaseModel):
-    host_name: str
     teams: list[str]
     preset_key: str
     mode_title: str

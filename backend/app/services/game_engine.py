@@ -30,6 +30,9 @@ from app.services.media_processing_service import MediaProcessingService
 from app.services.media_ingestion_service import MediaIngestionService
 
 
+DEFAULT_INTERNAL_HOST_NAME = "Host"
+
+
 class GameEngine:
     def __init__(
         self,
@@ -94,7 +97,6 @@ class GameEngine:
     def create_lobby(
         self,
         db: Session,
-        host_name: str,
         preset_key: str,
         mode_override: GameModePreset | None = None,
         teams: list[str] | None = None,
@@ -111,7 +113,7 @@ class GameEngine:
                     fallback_key = (preset_key or "classic_audio").strip() or "classic_audio"
                     persisted_mode_key = fallback_key if fallback_key in known_keys else "classic_audio"
 
-        lobby = Lobby(code=self._generate_code(db), host_name=host_name, mode_key=persisted_mode_key)
+        lobby = Lobby(code=self._generate_code(db), host_name=DEFAULT_INTERNAL_HOST_NAME, mode_key=persisted_mode_key)
         db.add(lobby)
         db.commit()
         db.refresh(lobby)
@@ -161,7 +163,6 @@ class GameEngine:
         self,
         db: Session,
         lobby_code: str,
-        host_name: str,
         team_names: list[str],
         spotify_connected: bool = False,
         mode_title: str | None = None,
@@ -169,7 +170,6 @@ class GameEngine:
         lobby = self._find_lobby(db, lobby_code)
         runtime_state = self._get_or_create_lobby_runtime_state(db, lobby.id)
 
-        lobby.host_name = host_name.strip() or lobby.host_name
         runtime_state.setup_teams = json.dumps(team_names)
         runtime_state.spotify_connected = bool(spotify_connected)
         if mode_title and mode_title.strip():
@@ -194,7 +194,6 @@ class GameEngine:
             parsed_teams = [team.name for team in teams]
 
         return {
-            "host_name": lobby.host_name,
             "teams": parsed_teams,
             "preset_key": lobby.mode_key,
             "mode_title": runtime_state.setup_mode_title or "Game Mode Details",
@@ -653,6 +652,20 @@ class GameEngine:
             exclude_played=True,
         )
         if not source_counts:
+            eligible_without_played = self._eligible_source_counts(
+                db,
+                lobby_id,
+                mode,
+                round_kind,
+                exclude_played=False,
+            )
+            if not eligible_without_played:
+                if self._mode_has_release_year_filter(mode):
+                    raise ValueError("No playable media available for the selected year range.")
+                raise ValueError(
+                    "No playable media available. Add/index a local, YouTube, or Spotify source, or enable TEST_MODE."
+                )
+
             self._clear_played_track_history(db, lobby_id)
             source_counts = self._eligible_source_counts(
                 db,
@@ -671,6 +684,7 @@ class GameEngine:
                 db,
                 lobby_id,
                 selected_source_id,
+                mode,
                 exclude_played=True,
             )
             if selected_track:
@@ -695,6 +709,7 @@ class GameEngine:
                     db,
                     lobby_id,
                     selected_source_id,
+                    mode,
                     exclude_played=True,
                 )
                 if selected_track:
@@ -727,6 +742,8 @@ class GameEngine:
             .filter(LobbySource.lobby_id == lobby_id)
         )
 
+        query = self._apply_release_year_filter(query, mode)
+
         if allowed_provider_keys is not None:
             if len(allowed_provider_keys) < 1:
                 return []
@@ -757,9 +774,11 @@ class GameEngine:
         db: Session,
         lobby_id: str,
         source_id: str,
+        mode: GameModePreset,
         exclude_played: bool,
     ) -> IndexedTrack | None:
         track_query = db.query(IndexedTrack).filter(IndexedTrack.source_id == source_id)
+        track_query = self._apply_release_year_filter(track_query, mode)
 
         if exclude_played:
             track_query = track_query.outerjoin(
@@ -776,6 +795,37 @@ class GameEngine:
 
         random_offset = random.randrange(available_count)
         return track_query.offset(random_offset).limit(1).first()
+
+    def _mode_release_year_bounds(self, mode: GameModePreset) -> tuple[int | None, int | None]:
+        release_year_from_raw = mode.filters.get("release_year_from")
+        release_year_to_raw = mode.filters.get("release_year_to")
+        release_year_from = self._parse_optional_year(release_year_from_raw)
+        release_year_to = self._parse_optional_year(release_year_to_raw)
+        return release_year_from, release_year_to
+
+    def _mode_has_release_year_filter(self, mode: GameModePreset) -> bool:
+        release_year_from, release_year_to = self._mode_release_year_bounds(mode)
+        return release_year_from is not None or release_year_to is not None
+
+    def _apply_release_year_filter(self, query, mode: GameModePreset):
+        release_year_from, release_year_to = self._mode_release_year_bounds(mode)
+        if release_year_from is None and release_year_to is None:
+            return query
+
+        query = query.filter(IndexedTrack.release_year.isnot(None))
+        if release_year_from is not None:
+            query = query.filter(IndexedTrack.release_year >= release_year_from)
+        if release_year_to is not None:
+            query = query.filter(IndexedTrack.release_year <= release_year_to)
+        return query
+
+    def _parse_optional_year(self, value: object) -> int | None:
+        if value in (None, ""):
+            return None
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return None
 
     def _build_media_item_from_track(self, track: IndexedTrack, provider_key: str) -> MediaItem:
         media_path: str | None = None

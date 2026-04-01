@@ -58,7 +58,9 @@ from app.schemas.game_mode import (
     CreateGameModePresetResponse,
     GameModeFiltersState,
     GameModePresetState,
+    RoundTypeDefinitionState,
     RoundTypeRuleState,
+    RoundTypesState,
     ValidateGameModeRequest,
     ValidateGameModeResponse,
 )
@@ -116,6 +118,22 @@ def list_game_modes() -> dict:
         for preset in game_mode_service.all_presets()
     ]
     return {"ok": True, "data": data}
+
+
+@router.get("/round-types", response_model=dict)
+def list_round_types() -> dict:
+    data = RoundTypesState(
+        round_types=[
+            RoundTypeDefinitionState(
+                kind=definition["kind"],
+                label=definition["label"],
+                requires_phone_connections=bool(definition["requires_phone_connections"]),
+                default_every_n_songs=int(definition["default_every_n_songs"]),
+            )
+            for definition in game_mode_service.available_round_types()
+        ]
+    )
+    return {"ok": True, "data": data.model_dump()}
 
 
 @router.post("/game-modes", response_model=dict)
@@ -457,6 +475,7 @@ def list_indexed_tracks(source_ids: str | None = None, limit: int = 500, db: Ses
             file_path=track.file_path,
             title=track.title,
             artist=track.artist,
+            release_year=track.release_year,
             playback_url=(
                 f"/api/media/tracks/{track.id}/stream"
                 if source.provider_key in {"local_folder", "local_files"}
@@ -512,7 +531,7 @@ async def create_lobby(payload: CreateLobbyRequest, db: Session = Depends(get_db
             if payload.save_as_preset:
                 custom_mode = game_mode_service.save_preset(custom_mode)
 
-        lobby = game_engine.create_lobby(db, payload.host_name, payload.preset_key, custom_mode, payload.teams)
+        lobby = game_engine.create_lobby(db, payload.preset_key, custom_mode, payload.teams)
         state = game_engine.get_state(db, lobby.code, message="Lobby created")
         return ApiEnvelope(data=state)
     except ValueError as error:
@@ -574,7 +593,6 @@ async def save_lobby_setup(code: str, payload: SaveLobbySetupRequest, db: Sessio
         game_engine.save_lobby_setup(
             db,
             code,
-            host_name=payload.host_name,
             team_names=payload.teams,
             spotify_connected=payload.spotify_connected,
             mode_title=payload.mode_title,

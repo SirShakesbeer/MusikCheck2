@@ -1,77 +1,70 @@
+import { Button, StatusChip } from '../ui';
+import type { GameModePresetState } from '../../types';
 import { ChangeEvent } from 'react';
 
-import { Button, Card, StatusChip } from '../ui';
-import type { GameModePresetState } from '../../types';
 
 type Props = {
   gameModes: GameModePresetState[];
-  runtimeTestMode: boolean;
+  selectedPresetKey: string;
+  customModeSelected: boolean;
   runtimeConfigBusy: boolean;
-  youtubeApiConfigured: boolean;
-  spotifyConnected: boolean;
-  spotifyAuthBusy: boolean;
-  onToggleRuntimeTestMode: (enabled: boolean) => void;
-  onConnectSpotify: () => void;
   onSelectPreset: (preset: GameModePresetState) => void;
   onSelectCustom: () => void;
 };
 
 export function GameModeSelectionTab({
   gameModes,
-  runtimeTestMode,
-  runtimeConfigBusy,
-  youtubeApiConfigured,
-  spotifyConnected,
-  spotifyAuthBusy,
-  onToggleRuntimeTestMode,
-  onConnectSpotify,
+  selectedPresetKey,
+  customModeSelected,
   onSelectPreset,
   onSelectCustom,
 }: Props) {
+  const cardClass = (selected: boolean) =>
+    [
+      'w-full rounded-2xl border px-4 py-4 text-left transition',
+      selected
+        ? 'border-mc-cyan bg-mc-cyan/10 shadow-[0_0_0_1px_rgba(61,221,255,0.35)]'
+        : 'border-white/10 bg-white/5 hover:border-white/25 hover:bg-white/10',
+    ].join(' ');
+
   return (
     <div>
-      <label className="mb-3 flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-cyan-50">
-        <input
-          type="checkbox"
-          checked={runtimeTestMode}
-          onChange={(event: ChangeEvent<HTMLInputElement>) => onToggleRuntimeTestMode(event.target.checked)}
-          disabled={runtimeConfigBusy}
-          className="min-h-0 h-4 w-4"
-        />
-        <span>Test mode (placeholder snippets)</span>
-      </label>
 
-      {!runtimeTestMode && !youtubeApiConfigured && (
-        <p className="danger-text">YouTube API key is not configured; real YouTube ingestion will fail.</p>
-      )}
-
-      <div className="mb-3 flex flex-wrap items-center gap-2">
-        <StatusChip tone={spotifyConnected ? 'ok' : 'warn'}>
-          Spotify: {spotifyConnected ? 'Connected' : 'Not connected'}
-        </StatusChip>
-        <Button onClick={onConnectSpotify} disabled={spotifyAuthBusy} variant="ghost" size="sm">
-          {spotifyAuthBusy ? 'Connecting...' : 'Connect Spotify'}
-        </Button>
-      </div>
-
-      <div className="source-list">
+      <div className="grid gap-3 md:grid-cols-2">
         {gameModes.map((preset) => (
-          <Button
+          <button
             key={preset.key}
-            className="source-row w-full justify-between text-left"
             onClick={() => onSelectPreset(preset)}
-            variant="ghost"
+            className={cardClass(selectedPresetKey === preset.key && !customModeSelected)}
+            type="button"
           >
-            <strong>{preset.name}</strong>
-            <span>{preset.requires_phone_connections ? 'Contains phone-required rounds' : 'No phone-required rounds'}</span>
-          </Button>
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <strong className="block text-lg">{preset.name}</strong>
+                <p className="muted-copy mt-1">
+                  {preset.requires_phone_connections ? 'Requires phone connections' : 'No phone required'}
+                </p>
+              </div>
+              {selectedPresetKey === preset.key && !customModeSelected && <StatusChip tone="ok">Selected</StatusChip>}
+            </div>
+          </button>
         ))}
 
-        <Button className="source-row w-full justify-between text-left" onClick={onSelectCustom} variant="ghost">
-          <strong>Custom Game</strong>
-          <span>Create your own round mix and frequencies</span>
-        </Button>
+        <button
+          type="button"
+          onClick={onSelectCustom}
+          className={cardClass(customModeSelected)}
+        >
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <strong className="block text-lg">Custom Game</strong>
+              <p className="muted-copy mt-1">Create your own round mix and frequencies</p>
+            </div>
+            {customModeSelected && <StatusChip tone="ok">Selected</StatusChip>}
+          </div>
+        </button>
       </div>
+      
     </div>
   );
 }

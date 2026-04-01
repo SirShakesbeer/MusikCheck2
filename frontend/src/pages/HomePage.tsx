@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 import { Button, Card, StatusChip } from '../components/ui';
-import { DEFAULT_HOST_NAME, DEFAULT_PRESET_KEY, DEFAULT_TEAM_NAMES } from '../config/defaults';
+import { DEFAULT_PRESET_KEY, DEFAULT_TEAM_NAMES } from '../config/defaults';
 import { api } from '../services/api';
 
 export function HomePage() {
@@ -14,7 +14,6 @@ export function HomePage() {
     setBusy(true);
     try {
       const result = await api.createLobby({
-        host_name: DEFAULT_HOST_NAME,
         preset_key: DEFAULT_PRESET_KEY,
         teams: [...DEFAULT_TEAM_NAMES],
       });

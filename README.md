@@ -529,25 +529,25 @@ end note
 - Add additional mode plugins (`music_video`, `lyrics`, `instrumental`, `speed round`, `STRÄWKCÜR`) (ffmpeg audio/video/frames extraction)
 - add a local database ingestion tool that can be connected in the ui
 - adjust point system to be more similar to MusikCheck (penalty points, lock artist/title guess points)
+- default german option and optional english localization
+
+think of a solution: create persistance of user info across sessions (user created gamemodes, highscores, connected local databases)
 
 ### UI
 
-- fix UI placement
-- update point display
-- add point buttons
-- update graphics, icons, colors, animations
+- home menu
+- host setup
+- host lobby
+- player screen
 
 - paper look and animation for schnipsel
+- animationss between screens
 
-### Finally
+### code quality
 
-- default german option and optional english localization
-- create persistance of user info across sessions (user created gamemodes, highscores, connected local databases)
 - security:
   - spotify connection security
 - tests
-- make game locally installable
-- add automatic song history file creation
 
 ### MusikCheck 1 integration
 
@@ -559,3 +559,9 @@ make the following features consistent with MusikCheck 1
 ### improvement areas
 
 - randomization, cross source randomization
+- release year filter for youtube
+
+### low-prio
+
+- language filter
+- add automatic song history file creation

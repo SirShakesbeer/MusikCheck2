@@ -22,6 +22,7 @@ import type {
   LobbySetupEnvelope,
   LobbySourcesEnvelope,
   SaveLobbySetupPayload,
+  RoundTypesEnvelope,
 } from '../types';
 import { API_BASE_URL, API_RETRY_DEFAULTS } from '../config/defaults';
 
@@ -97,6 +98,7 @@ function safeParseError(raw: string): string | null {
 
 export const api = {
   getGameModes: () => get<GameModesEnvelope>('/game-modes'),
+  getRoundTypes: () => get<RoundTypesEnvelope>('/round-types'),
   createGameModePreset: (name: string, config: GameModeConfig) =>
     post<CreateGameModePresetEnvelope, { name: string; config: GameModeConfig }>('/game-modes', {
       name,

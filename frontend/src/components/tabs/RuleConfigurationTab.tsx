@@ -1,17 +1,20 @@
 import { ChangeEvent } from 'react';
+import { Slider } from 'antd';
 
 import { Button, Card, Field, StatusChip } from '../ui';
+import { RELEASE_YEAR_FILTER_DEFAULTS } from '../../config/defaults';
 import type { ModeFormValues } from '../../services/gameModeFormService';
+import type { RoundTypeDefinition } from '../../types';
 
 type Props = {
   modeDetailsTitle: string;
   modeDetailsEditable: boolean;
   modeFormValues: ModeFormValues;
+  availableRoundTypes: RoundTypeDefinition[];
   requiredPhoneRoundTypes: string[];
-  saveAsPreset: boolean;
   newPresetName: string;
   onFieldChange: <K extends keyof ModeFormValues>(field: K, value: ModeFormValues[K]) => void;
-  onSaveAsPresetChange: (value: boolean) => void;
+  onRoundRuleChange: (roundKind: string, nextValues: { enabled?: boolean; every_n_songs?: string }) => void;
   onNewPresetNameChange: (value: string) => void;
   onSavePreset: () => void;
   onContinue: () => void;
@@ -21,15 +24,80 @@ export function RuleConfigurationTab({
   modeDetailsTitle,
   modeDetailsEditable,
   modeFormValues,
+  availableRoundTypes,
   requiredPhoneRoundTypes,
-  saveAsPreset,
   newPresetName,
   onFieldChange,
-  onSaveAsPresetChange,
+  onRoundRuleChange,
   onNewPresetNameChange,
   onSavePreset,
   onContinue,
 }: Props) {
+  const releaseYearFrom = modeFormValues.releaseYearFrom
+    ? Number.parseInt(modeFormValues.releaseYearFrom, 10)
+    : RELEASE_YEAR_FILTER_DEFAULTS.from;
+  const releaseYearTo = modeFormValues.releaseYearTo
+    ? Number.parseInt(modeFormValues.releaseYearTo, 10)
+    : RELEASE_YEAR_FILTER_DEFAULTS.to;
+  const safeReleaseYearFrom = Number.isFinite(releaseYearFrom) ? releaseYearFrom : RELEASE_YEAR_FILTER_DEFAULTS.from;
+  const safeReleaseYearTo = Number.isFinite(releaseYearTo) ? releaseYearTo : RELEASE_YEAR_FILTER_DEFAULTS.to;
+  const displayReleaseYearFrom = modeFormValues.releaseYearFrom || 'Any';
+  const displayReleaseYearTo = modeFormValues.releaseYearTo || 'Any';
+
+  const roundTypeRows = availableRoundTypes.map((roundType) => {
+    const roundRule = modeFormValues.roundRules[roundType.kind] ?? {
+      enabled: false,
+      every_n_songs: String(roundType.default_every_n_songs),
+    };
+
+    return (
+      <div key={roundType.kind} className="rounded-2xl border border-white/10 bg-slate-950/40 px-4 py-3 shadow-sm">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex flex-wrap items-center gap-3 text-sm font-semibold uppercase tracking-wide text-cyan-50">
+            <label className="flex items-center gap-3">
+              <input
+                type="checkbox"
+                checked={roundRule.enabled}
+                disabled={!modeDetailsEditable}
+                onChange={(event: ChangeEvent<HTMLInputElement>) => onRoundRuleChange(roundType.kind, { enabled: event.target.checked })}
+                className="h-4 w-4 min-h-0"
+              />
+              <span>{roundType.label}</span>
+            </label>
+
+            <span className="text-cyan-50/70">every</span>
+
+            <input
+              type="number"
+              min={1}
+              value={roundRule.every_n_songs}
+              disabled={!modeDetailsEditable || !roundRule.enabled}
+              onChange={(event: ChangeEvent<HTMLInputElement>) => onRoundRuleChange(roundType.kind, { every_n_songs: event.target.value })}
+              className="w-24"
+            />
+
+            <span className="text-cyan-50/70">rounds</span>
+          </div>
+
+          <div className="text-xs uppercase tracking-wide text-cyan-50/70">
+            {roundType.requires_phone_connections ? 'Phones required' : 'Phones optional'}
+          </div>
+        </div>
+      </div>
+    );
+  });
+
+  const onReleaseYearWindowChange = (value: number[]) => {
+    if (value.length < 2) {
+      return;
+    }
+
+    const nextFrom = Math.max(RELEASE_YEAR_FILTER_DEFAULTS.min, Math.min(value[0], value[1]));
+    const nextTo = Math.min(RELEASE_YEAR_FILTER_DEFAULTS.max, Math.max(value[0], value[1]));
+    onFieldChange('releaseYearFrom', String(nextFrom));
+    onFieldChange('releaseYearTo', String(nextTo));
+  };
+
   return (
     <div>
       <p>
@@ -37,103 +105,46 @@ export function RuleConfigurationTab({
         ? 'Configure round types and frequencies.'
         : 'Preset settings are read-only. You can continue or pick another tab.'}
       </p>
-      
-      <div className="source-row">
-        <label className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-cyan-50">
-          <input
-            type="checkbox"
-            checked={modeFormValues.audioEnabled}
-            disabled={!modeDetailsEditable}
-            onChange={(event: ChangeEvent<HTMLInputElement>) => onFieldChange('audioEnabled', event.target.checked)}
-            className="min-h-0 h-4 w-4"
-          />
-          <span>Audio rounds</span>
-        </label>
-        <label className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-cyan-50">
-          <input
-            type="checkbox"
-            checked={modeFormValues.videoEnabled}
-            disabled={!modeDetailsEditable}
-            onChange={(event: ChangeEvent<HTMLInputElement>) => onFieldChange('videoEnabled', event.target.checked)}
-            className="min-h-0 h-4 w-4"
-          />
-          <span>Video rounds</span>
-        </label>
-        <label className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-cyan-50">
-          <input
-            type="checkbox"
-            checked={modeFormValues.lyricsEnabled}
-            disabled={!modeDetailsEditable}
-            onChange={(event: ChangeEvent<HTMLInputElement>) => onFieldChange('lyricsEnabled', event.target.checked)}
-            className="min-h-0 h-4 w-4"
-          />
-          <span>Lyrics rounds</span>
-        </label>
-      </div>
 
-      <div className="source-list">
-        {modeFormValues.audioEnabled && (
-          <Field label="Audio frequency (every N songs)">
-            <input
-              type="number"
-              min={1}
-              value={modeFormValues.audioEverySongs}
-              disabled={!modeDetailsEditable}
-              onChange={(event: ChangeEvent<HTMLInputElement>) => onFieldChange('audioEverySongs', event.target.value)}
-            />
-          </Field>
-        )}
-        {modeFormValues.videoEnabled && (
-          <Field label="Video frequency (every N songs)">
-            <input
-              type="number"
-              min={1}
-              value={modeFormValues.videoEverySongs}
-              disabled={!modeDetailsEditable}
-              onChange={(event: ChangeEvent<HTMLInputElement>) => onFieldChange('videoEverySongs', event.target.value)}
-            />
-          </Field>
-        )}
-        {modeFormValues.lyricsEnabled && (
-          <Field label="Lyrics frequency (every N songs)">
-            <input
-              type="number"
-              min={1}
-              value={modeFormValues.lyricsEverySongs}
-              disabled={!modeDetailsEditable}
-              onChange={(event: ChangeEvent<HTMLInputElement>) => onFieldChange('lyricsEverySongs', event.target.value)}
-            />
-          </Field>
-        )}
-      </div>
+      {availableRoundTypes.length > 0 ? (
+        <div className="space-y-3">{roundTypeRows}</div>
+      ) : (
+        <Card>
+          <p className="muted-copy">Loading available round types...</p>
+        </Card>
+      )}
 
-      <div className="source-row">
-        <Field label="Release year from">
-          <input
-            type="number"
-            value={modeFormValues.releaseYearFrom}
-            disabled={!modeDetailsEditable}
-            onChange={(event: ChangeEvent<HTMLInputElement>) => onFieldChange('releaseYearFrom', event.target.value)}
-          />
-        </Field>
-        <Field label="Release year to">
-          <input
-            type="number"
-            value={modeFormValues.releaseYearTo}
-            disabled={!modeDetailsEditable}
-            onChange={(event: ChangeEvent<HTMLInputElement>) => onFieldChange('releaseYearTo', event.target.value)}
-          />
-        </Field>
-        <Field label="Language">
-          <input
-            value={modeFormValues.language}
-            disabled={!modeDetailsEditable}
-            onChange={(event: ChangeEvent<HTMLInputElement>) => onFieldChange('language', event.target.value)}
-          />
+      <div className="mt-4">
+        <Field label="Release year window">
+          <div className="space-y-4">
+            <div className="relative pt-8">
+              <div className="absolute left-0 right-0 top-0 flex items-center justify-between text-xs uppercase tracking-wide text-cyan-50/80">
+                <span>{displayReleaseYearFrom}</span>
+                <span>{displayReleaseYearTo}</span>
+              </div>
+              <Slider
+                range
+                min={RELEASE_YEAR_FILTER_DEFAULTS.min}
+                max={RELEASE_YEAR_FILTER_DEFAULTS.max}
+                step={1}
+                value={[safeReleaseYearFrom, safeReleaseYearTo]}
+                onChange={onReleaseYearWindowChange}
+                disabled={!modeDetailsEditable}
+                tooltip={{ formatter: (value) => `${value ?? ''}` }}
+              />
+              <div className="mt-2 flex items-center justify-between text-xs uppercase tracking-wide text-cyan-50/70">
+                <span>{RELEASE_YEAR_FILTER_DEFAULTS.min}</span>
+                <span>{RELEASE_YEAR_FILTER_DEFAULTS.max}</span>
+              </div>
+            </div>
+            <p className="muted-copy text-sm">
+              Drag both handles to set the window. The filter is inclusive, and tracks without a known year are skipped when a window is set.
+            </p>
+          </div>
         </Field>
       </div>
 
-      <div className="source-row">
+      <div className="mt-4 grid gap-3 md:grid-cols-3">
         <Field label="Snippet 1 duration (s)">
           <input
             type="number"
@@ -163,7 +174,7 @@ export function RuleConfigurationTab({
         </Field>
       </div>
 
-      <div className="source-row">
+      <div className="mt-4 grid gap-3 md:grid-cols-3">
         <Field label="Snippet 1 points">
           <input
             type="number"
@@ -193,7 +204,7 @@ export function RuleConfigurationTab({
         </Field>
       </div>
 
-      <div className="source-row">
+      <div className="mt-4 grid gap-3 md:grid-cols-3">
         <Field label="Bonus (artist + title)">
           <input
             type="number"
@@ -229,15 +240,6 @@ export function RuleConfigurationTab({
 
       {modeDetailsEditable && (
         <>
-          <label className="mt-3 flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-cyan-50">
-            <input
-              type="checkbox"
-              checked={saveAsPreset}
-              onChange={(event: ChangeEvent<HTMLInputElement>) => onSaveAsPresetChange(event.target.checked)}
-              className="min-h-0 h-4 w-4"
-            />
-            <span>Save this setup as a new preset</span>
-          </label>
           <Field label="Preset name">
             <input
               value={newPresetName}
@@ -245,11 +247,11 @@ export function RuleConfigurationTab({
               placeholder="My custom mode"
             />
           </Field>
-          <Button onClick={onSavePreset}>Save Preset Now</Button>
+          <Button onClick={onSavePreset} disabled={!newPresetName.trim()}>Save Preset</Button>
         </>
       )}
 
-      <div className="source-row mt-3">
+      <div className="mt-3">
         <Button onClick={onContinue} variant="secondary">Continue to Sources And Players</Button>
       </div>
     </div>

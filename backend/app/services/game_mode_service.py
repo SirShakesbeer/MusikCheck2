@@ -11,6 +11,7 @@ from app.core.defaults import (
     DEFAULT_PRESET_KEY,
     DEFAULT_REQUIRED_POINTS_TO_WIN,
     DEFAULT_WRONG_GUESS_PENALTY,
+    ROUND_TYPE_DEFINITIONS,
     ROUND_TYPE_PHONE_REQUIREMENTS,
 )
 
@@ -57,10 +58,13 @@ class GameModePreset:
 
         normalized_rules: list[RoundTypeRule] = []
         seen_kinds: set[str] = set()
+        known_round_kinds = {definition.kind for definition in ROUND_TYPE_DEFINITIONS}
         for rule in self.round_rules:
             kind = rule.kind.strip().lower()
             if not kind:
                 raise ValueError("Round rule kind is required")
+            if kind not in known_round_kinds:
+                raise ValueError(f"Unknown round kind '{kind}'")
             if rule.every_n_songs < 1:
                 raise ValueError(f"Frequency for '{kind}' must be >= 1")
             if kind in seen_kinds:
@@ -123,6 +127,17 @@ class GameModeService:
 
     def all_presets(self) -> list[GameModePreset]:
         return list(self._presets.values())
+
+    def available_round_types(self) -> list[dict[str, Any]]:
+        return [
+            {
+                "kind": definition.kind,
+                "label": definition.label,
+                "requires_phone_connections": definition.requires_phone_connections,
+                "default_every_n_songs": definition.default_every_n_songs,
+            }
+            for definition in ROUND_TYPE_DEFINITIONS
+        ]
 
     def all_modes(self) -> list[dict[str, str]]:
         return [{"key": preset.key, "name": preset.name} for preset in self._presets.values()]

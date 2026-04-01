@@ -1,4 +1,4 @@
-import type { GameModeConfig, GameModePresetState } from '../types';
+import type { GameModeConfig, GameModePresetState, RoundTypeDefinition } from '../types';
 import { MODE_FORM_DEFAULTS } from '../config/defaults';
 
 export const LOCAL_STAGE_DURATIONS_DEFAULT = [...MODE_FORM_DEFAULTS.stageDurations];
@@ -9,13 +9,13 @@ export const LOCAL_REQUIRED_POINTS_TO_WIN = MODE_FORM_DEFAULTS.requiredPointsToW
 
 export const ROUND_TYPES_REQUIRING_PHONES = new Set<string>(MODE_FORM_DEFAULTS.roundTypesRequiringPhones);
 
+export type ModeRoundRuleValues = {
+  enabled: boolean;
+  every_n_songs: string;
+};
+
 export type ModeFormValues = {
-  audioEnabled: boolean;
-  videoEnabled: boolean;
-  lyricsEnabled: boolean;
-  audioEverySongs: string;
-  videoEverySongs: string;
-  lyricsEverySongs: string;
+  roundRules: Record<string, ModeRoundRuleValues>;
   releaseYearFrom: string;
   releaseYearTo: string;
   language: string;
@@ -30,14 +30,32 @@ export type ModeFormValues = {
   requiredPointsToWin: string;
 };
 
-export function getDefaultModeFormValues(): ModeFormValues {
+function buildRoundRuleValues(
+  roundTypes: RoundTypeDefinition[],
+  presetRules: GameModePresetState['round_rules'] = [],
+): Record<string, ModeRoundRuleValues> {
+  const roundRuleValues: Record<string, ModeRoundRuleValues> = {};
+  const roundTypesToUse = roundTypes.length > 0 ? roundTypes : presetRules.map((rule) => ({
+    kind: rule.kind,
+    label: rule.kind,
+    requires_phone_connections: ROUND_TYPES_REQUIRING_PHONES.has(rule.kind),
+    default_every_n_songs: rule.every_n_songs,
+  }));
+
+  for (const roundType of roundTypesToUse) {
+    const presetRule = presetRules.find((rule) => rule.kind === roundType.kind);
+    roundRuleValues[roundType.kind] = {
+      enabled: Boolean(presetRule),
+      every_n_songs: String(presetRule?.every_n_songs ?? roundType.default_every_n_songs),
+    };
+  }
+
+  return roundRuleValues;
+}
+
+export function getDefaultModeFormValues(roundTypes: RoundTypeDefinition[] = []): ModeFormValues {
   return {
-    audioEnabled: true,
-    videoEnabled: true,
-    lyricsEnabled: true,
-    audioEverySongs: String(MODE_FORM_DEFAULTS.audioEverySongs),
-    videoEverySongs: String(MODE_FORM_DEFAULTS.videoEverySongs),
-    lyricsEverySongs: String(MODE_FORM_DEFAULTS.lyricsEverySongs),
+    roundRules: buildRoundRuleValues(roundTypes),
     releaseYearFrom: '',
     releaseYearTo: '',
     language: '',
@@ -53,18 +71,9 @@ export function getDefaultModeFormValues(): ModeFormValues {
   };
 }
 
-export function buildFormValuesFromPreset(preset: GameModePresetState): ModeFormValues {
-  const audioRule = preset.round_rules.find((rule) => rule.kind === 'audio');
-  const videoRule = preset.round_rules.find((rule) => rule.kind === 'video');
-  const lyricsRule = preset.round_rules.find((rule) => rule.kind === 'lyrics');
-
+export function buildFormValuesFromPreset(preset: GameModePresetState, roundTypes: RoundTypeDefinition[] = []): ModeFormValues {
   return {
-    audioEnabled: Boolean(audioRule),
-    videoEnabled: Boolean(videoRule),
-    lyricsEnabled: Boolean(lyricsRule),
-    audioEverySongs: audioRule ? String(audioRule.every_n_songs) : '0',
-    videoEverySongs: videoRule ? String(videoRule.every_n_songs) : '0',
-    lyricsEverySongs: lyricsRule ? String(lyricsRule.every_n_songs) : '0',
+    roundRules: buildRoundRuleValues(roundTypes, preset.round_rules),
     releaseYearFrom: typeof preset.filters.release_year_from === 'number' ? String(preset.filters.release_year_from) : '',
     releaseYearTo: typeof preset.filters.release_year_to === 'number' ? String(preset.filters.release_year_to) : '',
     language: preset.filters.language ?? '',
@@ -80,16 +89,19 @@ export function buildFormValuesFromPreset(preset: GameModePresetState): ModeForm
   };
 }
 
-export function getActiveRoundTypes(values: ModeFormValues): string[] {
-  return [
-    values.audioEnabled ? 'audio' : null,
-    values.videoEnabled ? 'video' : null,
-    values.lyricsEnabled ? 'lyrics' : null,
-  ].filter(Boolean) as string[];
+export function getActiveRoundTypes(values: ModeFormValues, roundTypes: RoundTypeDefinition[] = []): string[] {
+  const orderedRoundTypes = roundTypes.length > 0
+    ? roundTypes
+    : Object.keys(values.roundRules).map((kind) => ({ kind, label: kind, requires_phone_connections: false, default_every_n_songs: 1 }));
+
+  return orderedRoundTypes
+    .filter((roundType) => values.roundRules[roundType.kind]?.enabled)
+    .map((roundType) => roundType.kind);
 }
 
-export function getRequiredPhoneRoundTypes(values: ModeFormValues): string[] {
-  return getActiveRoundTypes(values).filter((roundType) => ROUND_TYPES_REQUIRING_PHONES.has(roundType));
+export function getRequiredPhoneRoundTypes(values: ModeFormValues, roundTypes: RoundTypeDefinition[] = []): string[] {
+  const roundTypeMap = new Map(roundTypes.map((roundType) => [roundType.kind, roundType]));
+  return getActiveRoundTypes(values, roundTypes).filter((roundType) => roundTypeMap.get(roundType)?.requires_phone_connections ?? ROUND_TYPES_REQUIRING_PHONES.has(roundType));
 }
 
 export function getConfiguredStageDurations(values: Pick<ModeFormValues, 'snippet1Duration' | 'snippet2Duration' | 'snippet3Duration'>): number[] {
@@ -101,7 +113,7 @@ export function getConfiguredStageDurations(values: Pick<ModeFormValues, 'snippe
   );
 }
 
-export function buildModeConfig(values: ModeFormValues): GameModeConfig {
+export function buildModeConfig(values: ModeFormValues, roundTypes: RoundTypeDefinition[] = []): GameModeConfig {
   const stageDurations = [values.snippet1Duration, values.snippet2Duration, values.snippet3Duration].map((value) =>
     Number.parseInt(value, 10),
   );
@@ -110,18 +122,20 @@ export function buildModeConfig(values: ModeFormValues): GameModeConfig {
   );
   const rules: { kind: string; every_n_songs: number }[] = [];
 
-  const audioEvery = Number.parseInt(values.audioEverySongs, 10);
-  const videoEvery = Number.parseInt(values.videoEverySongs, 10);
-  const lyricsEvery = Number.parseInt(values.lyricsEverySongs, 10);
+  const orderedRoundTypes = roundTypes.length > 0
+    ? roundTypes
+    : Object.keys(values.roundRules).map((kind) => ({ kind, label: kind, requires_phone_connections: false, default_every_n_songs: 1 }));
 
-  if (values.audioEnabled && Number.isFinite(audioEvery) && audioEvery > 0) {
-    rules.push({ kind: 'audio', every_n_songs: audioEvery });
-  }
-  if (values.videoEnabled && Number.isFinite(videoEvery) && videoEvery > 0) {
-    rules.push({ kind: 'video', every_n_songs: videoEvery });
-  }
-  if (values.lyricsEnabled && Number.isFinite(lyricsEvery) && lyricsEvery > 0) {
-    rules.push({ kind: 'lyrics', every_n_songs: lyricsEvery });
+  for (const roundType of orderedRoundTypes) {
+    const ruleValues = values.roundRules[roundType.kind];
+    if (!ruleValues?.enabled) {
+      continue;
+    }
+
+    const everySongs = Number.parseInt(ruleValues.every_n_songs, 10);
+    if (Number.isFinite(everySongs) && everySongs > 0) {
+      rules.push({ kind: roundType.kind, every_n_songs: everySongs });
+    }
   }
 
   const fromYear = Number.parseInt(values.releaseYearFrom, 10);
@@ -145,10 +159,13 @@ export function buildModeConfig(values: ModeFormValues): GameModeConfig {
   };
 }
 
-export async function validateGameModeConfig(values: ModeFormValues): Promise<{ valid: boolean; error?: string }> {
+export async function validateGameModeConfig(
+  values: ModeFormValues,
+  roundTypes: RoundTypeDefinition[] = [],
+): Promise<{ valid: boolean; error?: string }> {
   const { api } = await import('./api');
   try {
-    const config = buildModeConfig(values);
+    const config = buildModeConfig(values, roundTypes);
     const result = await api.validateGameMode(config);
     return result.data;
   } catch (err) {

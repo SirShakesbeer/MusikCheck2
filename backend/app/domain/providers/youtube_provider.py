@@ -54,6 +54,8 @@ class YouTubePlaylistProvider(MediaProvider):
             except URLError as error:
                 raise ValueError(f"YouTube API request failed: {error}") from error
 
+            page_video_ids: list[str] = []
+            page_items: list[tuple[str, str, str]] = []
             for raw_item in payload.get("items", []):
                 snippet = raw_item.get("snippet", {})
                 details = raw_item.get("contentDetails", {})
@@ -67,12 +69,20 @@ class YouTubePlaylistProvider(MediaProvider):
                     or snippet.get("channelTitle")
                     or "Unknown Artist"
                 )
+                page_video_ids.append(str(video_id))
+                page_items.append((str(video_id), title, artist))
+
+            video_metadata = self._fetch_video_metadata(page_video_ids)
+            for video_id, title, artist in page_items:
+                metadata = video_metadata.get(video_id, {})
                 items.append(
                     MediaItem(
                         source_id=f"yt:{playlist_id}:{video_id}",
                         title=title,
                         artist=artist,
                         media_path=f"https://www.youtube.com/watch?v={video_id}",
+                        duration_seconds=metadata.get("duration_seconds"),
+                        release_year=metadata.get("release_year"),
                     )
                 )
 
@@ -100,17 +110,25 @@ class YouTubePlaylistProvider(MediaProvider):
         return None
 
     def fetch_video_durations(self, video_ids: list[str]) -> dict[str, int]:
+        metadata = self._fetch_video_metadata(video_ids)
+        return {
+            video_id: int(entry["duration_seconds"])
+            for video_id, entry in metadata.items()
+            if entry.get("duration_seconds") is not None
+        }
+
+    def _fetch_video_metadata(self, video_ids: list[str]) -> dict[str, dict[str, int | None]]:
         valid_ids = [value.strip() for value in video_ids if value and value.strip()]
         if not valid_ids:
             return {}
         if not settings.youtube_api_key:
             raise ValueError("YouTube API key is not configured")
 
-        durations: dict[str, int] = {}
+        metadata: dict[str, dict[str, int | None]] = {}
         for start in range(0, len(valid_ids), 50):
             batch = valid_ids[start : start + 50]
             params = {
-                "part": "contentDetails",
+                "part": "contentDetails,snippet",
                 "id": ",".join(batch),
                 "maxResults": "50",
                 "key": settings.youtube_api_key,
@@ -132,10 +150,13 @@ class YouTubePlaylistProvider(MediaProvider):
                     continue
                 iso_duration = str(raw_item.get("contentDetails", {}).get("duration") or "")
                 parsed_seconds = self._parse_iso8601_duration(iso_duration)
+                published_at = str(raw_item.get("snippet", {}).get("publishedAt") or "")
                 if parsed_seconds is not None:
-                    durations[video_id] = parsed_seconds
+                    metadata[video_id] = {"duration_seconds": parsed_seconds, "release_year": self._published_year(published_at)}
+                else:
+                    metadata[video_id] = {"duration_seconds": None, "release_year": self._published_year(published_at)}
 
-        return durations
+        return metadata
 
     def _parse_iso8601_duration(self, value: str) -> int | None:
         match = re.match(r"^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$", value)
@@ -146,6 +167,14 @@ class YouTubePlaylistProvider(MediaProvider):
         minutes = int(match.group(2) or 0)
         seconds = int(match.group(3) or 0)
         return hours * 3600 + minutes * 60 + seconds
+
+    def _published_year(self, published_at: str) -> int | None:
+        if len(published_at) < 4 or not published_at[:4].isdigit():
+            return None
+        try:
+            return int(published_at[:4])
+        except ValueError:
+            return None
 
     def _build_http_error_detail(self, error: HTTPError) -> str:
         raw_body = ""

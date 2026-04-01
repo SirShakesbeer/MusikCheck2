@@ -4,7 +4,6 @@ import type { SetupStep } from '../stores/hostSetupStore';
 
 export async function ensurePhoneLobby(params: {
   state: GameState | null;
-  hostName: string;
   selectedPresetKey: string;
   modeDetailsTitle: string;
   modeConfig: GameModeConfig;
@@ -23,7 +22,6 @@ export async function ensurePhoneLobby(params: {
   }
 
   const result = await api.createLobby({
-    host_name: params.hostName,
     preset_key: params.selectedPresetKey,
     mode_config: params.modeConfig,
     teams: params.teamNames,
@@ -35,7 +33,6 @@ export async function ensurePhoneLobby(params: {
 
 export async function continueToGameSetup(params: {
   state: GameState | null;
-  hostName: string;
   selectedPresetKey: string;
   modeDetailsTitle: string;
   modeConfig: GameModeConfig;

@@ -25,6 +25,9 @@ def apply_schema_patches() -> None:
         "lobbies": [
             "ADD COLUMN expires_at DATETIME",
         ],
+        "indexed_tracks": [
+            "ADD COLUMN release_year INTEGER",
+        ],
         "active_round_states": [
             "ADD COLUMN max_stage_reached INTEGER DEFAULT 0",
             f"ADD COLUMN playback_provider VARCHAR(64) DEFAULT '{DEFAULT_PLAYBACK_PROVIDER}'",
@@ -45,6 +48,12 @@ def apply_schema_patches() -> None:
         ],
     }
 
+    index_patches: dict[str, list[str]] = {
+        "indexed_tracks": [
+            "CREATE INDEX IF NOT EXISTS ix_indexed_tracks_source_release_year ON indexed_tracks (source_id, release_year)",
+        ],
+    }
+
     with engine.begin() as connection:
         for table_name, table_patches in patches.items():
             if not inspector.has_table(table_name):
@@ -56,6 +65,13 @@ def apply_schema_patches() -> None:
                 if column_name in existing_columns:
                     continue
                 connection.execute(text(f"ALTER TABLE {table_name} {patch}"))
+
+        for table_name, table_patches in index_patches.items():
+            if not inspector.has_table(table_name):
+                continue
+
+            for patch in table_patches:
+                connection.execute(text(patch))
 
 
 def get_db():

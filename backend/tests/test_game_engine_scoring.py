@@ -1,4 +1,5 @@
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 from sqlalchemy import create_engine
@@ -66,7 +67,7 @@ class GameEngineScoringTests(unittest.TestCase):
 
     def _setup_round(self):
         with self.SessionLocal() as db:
-            lobby = self.engine_service.create_lobby(db, host_name="Host", preset_key=self.preset.key, mode_override=self.preset)
+            lobby = self.engine_service.create_lobby(db, preset_key=self.preset.key, mode_override=self.preset)
             self.engine_service.join_team(db, lobby.code, player_name="Alice", team_name="Team A")
 
             team = db.query(Team).filter(Team.lobby_id == lobby.id, Team.name == "Team A").first()
@@ -253,7 +254,6 @@ class GameEngineScoringTests(unittest.TestCase):
         with self.SessionLocal() as db:
             lobby = self.engine_service.create_lobby(
                 db,
-                host_name="Host",
                 preset_key=self.preset.key,
                 mode_override=self.preset,
             )
@@ -317,7 +317,6 @@ class GameEngineScoringTests(unittest.TestCase):
         with self.SessionLocal() as db:
             lobby = self.engine_service.create_lobby(
                 db,
-                host_name="Host",
                 preset_key=self.preset.key,
                 mode_override=self.preset,
             )
@@ -370,7 +369,6 @@ class GameEngineScoringTests(unittest.TestCase):
         with self.SessionLocal() as db:
             lobby = self.engine_service.create_lobby(
                 db,
-                host_name="Host",
                 preset_key=video_mode.key,
                 mode_override=video_mode,
             )
@@ -405,7 +403,6 @@ class GameEngineScoringTests(unittest.TestCase):
         with self.SessionLocal() as db:
             lobby = self.engine_service.create_lobby(
                 db,
-                host_name="Host",
                 preset_key=self.preset.key,
                 mode_override=self.preset,
             )
@@ -445,7 +442,6 @@ class GameEngineScoringTests(unittest.TestCase):
         with self.SessionLocal() as db:
             lobby = self.engine_service.create_lobby(
                 db,
-                host_name="Host",
                 preset_key=self.preset.key,
                 mode_override=self.preset,
             )
@@ -478,6 +474,62 @@ class GameEngineScoringTests(unittest.TestCase):
             state = self.engine_service.get_state(db, lobby.code)
             assert state.current_round is not None
             self.assertEqual(state.current_round.round_kind, "audio")
+
+    def test_release_year_filter_uses_only_tracks_in_range(self) -> None:
+        settings.test_mode = False
+        filtered_preset = GameModePreset(
+            key="year_filtered",
+            name="Year Filtered",
+            stage_durations=[2, 5, 8],
+            stage_points=[10, 6, 3],
+            round_rules=[RoundTypeRule(kind="audio", every_n_songs=1)],
+            bonus_points_both=2,
+            wrong_guess_penalty=5,
+            required_points_to_win=20,
+            filters={"release_year_from": 2000, "release_year_to": 2010, "language": ""},
+        )
+        filtered_engine = GameEngine(
+            mode_service=_StubModeService(filtered_preset),
+            media_processing=MediaProcessingService(),
+            media_ingestion=_StubMediaIngestionService(),
+        )
+
+        try:
+            with self.SessionLocal() as db:
+                lobby = filtered_engine.create_lobby(
+                    db,
+                    preset_key=filtered_preset.key,
+                    mode_override=filtered_preset,
+                )
+                filtered_engine.join_team(db, lobby.code, player_name="Alice", team_name="Team A")
+
+                source_id = self._add_source_with_tracks(
+                    db,
+                    lobby.id,
+                    provider_key="local_files",
+                    source_value="library://year-filter",
+                    track_count=2,
+                    track_prefix="year",
+                )
+                tracks = (
+                    db.query(IndexedTrack)
+                    .filter(IndexedTrack.source_id == source_id)
+                    .order_by(IndexedTrack.file_path.asc())
+                    .all()
+                )
+                self.assertEqual(len(tracks), 2)
+                tracks[0].release_year = 1998
+                tracks[1].release_year = 2005
+                db.commit()
+
+                filtered_engine.start_round(db, lobby.code)
+                active_round = db.query(ActiveRoundState).filter(ActiveRoundState.lobby_id == lobby.id).first()
+                assert active_round is not None
+                selected_track = db.query(IndexedTrack).filter(IndexedTrack.id == active_round.media_source_id).first()
+                assert selected_track is not None
+                self.assertEqual(selected_track.title, "year Title 1")
+        finally:
+            settings.test_mode = self._old_test_mode
 
 
 if __name__ == "__main__":

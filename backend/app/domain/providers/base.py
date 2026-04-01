@@ -10,6 +10,7 @@ class MediaItem:
     media_path: str | None = None
     lyrics: str | None = None
     duration_seconds: int | None = None
+    release_year: int | None = None
 
 
 class MediaProvider(ABC):

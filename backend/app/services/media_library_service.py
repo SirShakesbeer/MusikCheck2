@@ -4,6 +4,7 @@ from urllib.parse import parse_qs, urlparse
 from sqlalchemy.orm import Session
 
 from app.domain.providers.base import MediaItem
+from app.domain.providers.local_file_provider import extract_local_file_metadata
 from app.domain.models import IndexedTrack, MediaSource
 
 AUDIO_EXTENSIONS = {".mp3", ".wav", ".flac", ".m4a", ".ogg"}
@@ -67,7 +68,7 @@ class MediaLibraryService:
 
             stat = path.stat()
             file_path = str(path)
-            title, artist = self._title_artist_from_filename(path.stem)
+            title, artist, release_year = extract_local_file_metadata(path)
 
             existing = db.query(IndexedTrack).filter(IndexedTrack.file_path == file_path).first()
             if existing:
@@ -75,6 +76,7 @@ class MediaLibraryService:
                     continue
                 existing.title = title
                 existing.artist = artist
+                existing.release_year = release_year
                 existing.file_mtime = int(stat.st_mtime)
                 existing.file_size = int(stat.st_size)
                 existing.source_id = source.id
@@ -85,6 +87,7 @@ class MediaLibraryService:
                         file_path=file_path,
                         title=title,
                         artist=artist,
+                        release_year=release_year,
                         file_mtime=int(stat.st_mtime),
                         file_size=int(stat.st_size),
                     )
@@ -159,6 +162,10 @@ class MediaLibraryService:
                     existing.artist = item.artist
                     was_changed = True
 
+                if existing.release_year != item.release_year:
+                    existing.release_year = item.release_year
+                    was_changed = True
+
                 if duration_ms > 0 and existing.file_size != duration_ms:
                     existing.file_size = duration_ms
                     was_changed = True
@@ -172,6 +179,7 @@ class MediaLibraryService:
                         file_path=external_track_key,
                         title=item.title,
                         artist=item.artist,
+                        release_year=item.release_year,
                         file_mtime=0,
                         file_size=duration_ms,
                     )
@@ -180,9 +188,3 @@ class MediaLibraryService:
 
         db.commit()
         return changed_count
-
-    def _title_artist_from_filename(self, stem: str) -> tuple[str, str]:
-        if " - " in stem:
-            artist, title = stem.split(" - ", 1)
-            return title.strip(), artist.strip()
-        return stem.strip(), "Unknown Artist"

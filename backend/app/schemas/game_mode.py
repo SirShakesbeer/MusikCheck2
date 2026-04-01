@@ -12,6 +12,17 @@ class RoundTypeRuleState(BaseModel):
     every_n_songs: int = Field(ge=1)
 
 
+class RoundTypeDefinitionState(BaseModel):
+    kind: str = Field(min_length=1)
+    label: str = Field(min_length=1)
+    requires_phone_connections: bool = False
+    default_every_n_songs: int = Field(ge=1)
+
+
+class RoundTypesState(BaseModel):
+    round_types: list[RoundTypeDefinitionState]
+
+
 class GameModeFiltersState(BaseModel):
     release_year_from: int | None = None
     release_year_to: int | None = None

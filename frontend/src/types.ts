@@ -65,6 +65,13 @@ export type RoundTypeRule = {
   every_n_songs: number;
 };
 
+export type RoundTypeDefinition = {
+  kind: string;
+  label: string;
+  requires_phone_connections: boolean;
+  default_every_n_songs: number;
+};
+
 export type GameModeFilters = {
   release_year_from?: number | null;
   release_year_to?: number | null;
@@ -99,6 +106,13 @@ export type GameModesEnvelope = {
   data: GameModePresetState[];
 };
 
+export type RoundTypesEnvelope = {
+  ok: boolean;
+  data: {
+    round_types: RoundTypeDefinition[];
+  };
+};
+
 export type CreateGameModePresetEnvelope = {
   ok: boolean;
   data: {
@@ -107,7 +121,6 @@ export type CreateGameModePresetEnvelope = {
 };
 
 export type CreateLobbyPayload = {
-  host_name: string;
   preset_key: string;
   mode_config?: GameModeConfig;
   teams?: string[];
@@ -121,7 +134,6 @@ export type UpdateLobbyModePayload = {
 };
 
 export type SaveLobbySetupPayload = {
-  host_name: string;
   teams: string[];
   preset_key?: string;
   mode_title?: string;
@@ -130,7 +142,6 @@ export type SaveLobbySetupPayload = {
 };
 
 export type LobbySetupState = {
-  host_name: string;
   teams: string[];
   preset_key: string;
   mode_title: string;

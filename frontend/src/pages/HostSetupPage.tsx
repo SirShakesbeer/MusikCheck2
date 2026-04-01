@@ -7,7 +7,6 @@ import { RuleConfigurationTab } from '../components/tabs/RuleConfigurationTab';
 import { SourcePlayerControlTab } from '../components/tabs/SourcePlayerControlTab';
 import { Button, Card, StatusChip } from '../components/ui';
 import {
-  DEFAULT_HOST_NAME,
   DEFAULT_MODE_DETAILS_TITLE,
   DEFAULT_PRESET_KEY,
   DEFAULT_SETUP_TEAMS_TEXT,
@@ -34,7 +33,7 @@ import {
   type SourceType,
 } from '../services/mediaSourceController';
 import { connectLobbySocket } from '../services/ws';
-import type { GameModePresetState, GameState } from '../types';
+import type { GameModePresetState, GameState, RoundTypeDefinition } from '../types';
 
 type SetupTab = 'startscreen' | 'rules' | 'sources';
 
@@ -61,7 +60,6 @@ export function HostSetupPage() {
   const launchTransitionTimeoutRef = useRef<number | null>(null);
   const [activeTab, setActiveTab] = useState<SetupTab>('startscreen');
 
-  const [hostName, setHostName] = useState(DEFAULT_HOST_NAME);
   const [setupTeams, setSetupTeams] = useState(DEFAULT_SETUP_TEAMS_TEXT);
   const [localSources, setLocalSources] = useState<LocalSource[]>([]);
   const [newSourceType, setNewSourceType] = useState<SourceType>('local-folder');
@@ -69,13 +67,13 @@ export function HostSetupPage() {
   const [pendingLocalFileCount, setPendingLocalFileCount] = useState<number>(0);
 
   const [gameModes, setGameModes] = useState<GameModePresetState[]>([]);
+  const [availableRoundTypes, setAvailableRoundTypes] = useState<RoundTypeDefinition[]>([]);
   const [selectedPresetKey, setSelectedPresetKey] = useState<string>(DEFAULT_PRESET_KEY);
   const [modeDetailsEditable, setModeDetailsEditable] = useState<boolean>(false);
   const [modeDetailsTitle, setModeDetailsTitle] = useState<string>(DEFAULT_MODE_DETAILS_TITLE);
 
   const [modeFormValues, setModeFormValues] = useState<ModeFormValues>(getDefaultModeFormValues());
 
-  const [saveAsPreset, setSaveAsPreset] = useState<boolean>(false);
   const [newPresetName, setNewPresetName] = useState<string>('');
 
   const [runtimeTestMode, setRuntimeTestMode] = useState<boolean>(false);
@@ -113,74 +111,62 @@ export function HostSetupPage() {
   }, [code, state?.lobby_code]);
 
   useEffect(() => {
-    const loadRuntimeConfig = async () => {
-      try {
-        const result = await api.getRuntimeConfig();
-        setRuntimeTestMode(Boolean(result.data.test_mode));
-        setYoutubeApiConfigured(Boolean(result.data.youtube_api_key_configured));
-
-        const spotify = await api.getSpotifyStatus();
-        setSpotifyConnected(Boolean(spotify.data.connected));
-
-        const modes = await api.getGameModes();
-        setGameModes(modes.data);
-
-        if (modes.data.length > 0 && !code.trim()) {
-          const defaultPreset = modes.data.find((preset) => preset.key === DEFAULT_PRESET_KEY) ?? modes.data[0];
-          setSelectedPresetKey(defaultPreset.key);
-          setModeDetailsTitle(defaultPreset.name);
-          setModeFormValues(buildFormValuesFromPreset(defaultPreset));
-        }
-      } catch (err) {
-        setError(err instanceof Error ? err.message : String(err));
-      }
-    };
-
-    void loadRuntimeConfig();
-  }, [code]);
-
-  useEffect(() => {
     const lobbyCode = code.trim();
     if (!lobbyCode) {
       navigate('/', { replace: true });
       return;
     }
 
-    const loadLobby = async () => {
-      isHydratingSetupRef.current = true;
+    const loadRuntimeConfig = async () => {
       try {
-        const [stateResult, setupResult, sourcesResult] = await Promise.all([
-          api.getLobbyState(lobbyCode),
-          api.getLobbySetup(lobbyCode),
-          api.getLobbySources(lobbyCode),
+        const [runtimeResult, spotifyResult, roundTypesResult, modesResult] = await Promise.all([
+          api.getRuntimeConfig(),
+          api.getSpotifyStatus(),
+          api.getRoundTypes(),
+          api.getGameModes(),
         ]);
 
-        setState(stateResult.data);
-        setHostName(setupResult.data.host_name || DEFAULT_HOST_NAME);
-        setSetupTeams(setupResult.data.teams.join(', '));
-        setSelectedPresetKey(setupResult.data.preset_key || stateResult.data.mode_key || DEFAULT_PRESET_KEY);
-        setModeDetailsTitle(setupResult.data.mode_title || stateResult.data.mode.name || DEFAULT_MODE_DETAILS_TITLE);
-        setModeFormValues(buildFormValuesFromPreset(stateResult.data.mode));
-        setSpotifyConnected(Boolean(setupResult.data.spotify_connected));
-        setLocalSources(
-          sourcesResult.data.map((source) => ({
-            id: source.source_id,
-            type: normalizeSourceType(source.source_type),
-            value: source.source_value,
-            backendSourceId: source.source_id,
-            importedCount: source.imported_count,
-          }))
-        );
-        setSessionExpired(false);
-        setError(null);
+        const roundTypes = roundTypesResult.data.round_types;
+        setAvailableRoundTypes(roundTypes);
+        setRuntimeTestMode(Boolean(runtimeResult.data.test_mode));
+        setYoutubeApiConfigured(Boolean(runtimeResult.data.youtube_api_key_configured));
+        setSpotifyConnected(Boolean(spotifyResult.data.connected));
+        setGameModes(modesResult.data);
+
+        isHydratingSetupRef.current = true;
+        try {
+          const [stateResult, setupResult, sourcesResult] = await Promise.all([
+            api.getLobbyState(lobbyCode),
+            api.getLobbySetup(lobbyCode),
+            api.getLobbySources(lobbyCode),
+          ]);
+
+          setState(stateResult.data);
+          setSetupTeams(setupResult.data.teams.join(', '));
+          setSelectedPresetKey(setupResult.data.preset_key || stateResult.data.mode_key || DEFAULT_PRESET_KEY);
+          setModeDetailsTitle(setupResult.data.mode_title || stateResult.data.mode.name || DEFAULT_MODE_DETAILS_TITLE);
+          setModeFormValues(buildFormValuesFromPreset(stateResult.data.mode, roundTypes));
+          setSpotifyConnected(Boolean(setupResult.data.spotify_connected));
+          setLocalSources(
+            sourcesResult.data.map((source) => ({
+              id: source.source_id,
+              type: normalizeSourceType(source.source_type),
+              value: source.source_value,
+              backendSourceId: source.source_id,
+              importedCount: source.imported_count,
+            }))
+          );
+          setSessionExpired(false);
+          setError(null);
+        } finally {
+          isHydratingSetupRef.current = false;
+        }
       } catch (err) {
         applyUiError(err);
-      } finally {
-        isHydratingSetupRef.current = false;
       }
     };
 
-    void loadLobby();
+    void loadRuntimeConfig();
   }, [code, navigate]);
 
   useEffect(() => {
@@ -195,16 +181,19 @@ export function HostSetupPage() {
       return;
     }
 
-    const modeConfig = buildModeConfig(modeFormValues);
+    if (availableRoundTypes.length === 0) {
+      return;
+    }
+
+    const modeConfig = buildModeConfig(modeFormValues, availableRoundTypes);
     const teamNames = parseTeamNames(setupTeams);
-    if (!hostName.trim() || teamNames.length < 1) {
+    if (teamNames.length < 1) {
       return;
     }
 
     const timeout = window.setTimeout(async () => {
       try {
         await api.saveLobbySetup(lobbyCode, {
-          host_name: hostName.trim(),
           teams: teamNames,
           preset_key: selectedPresetKey,
           mode_title: modeDetailsTitle,
@@ -220,9 +209,9 @@ export function HostSetupPage() {
     };
   }, [
     code,
-    hostName,
     modeDetailsTitle,
     modeFormValues,
+    availableRoundTypes,
     selectedPresetKey,
     sessionExpired,
     setupTeams,
@@ -247,7 +236,7 @@ export function HostSetupPage() {
     setSelectedPresetKey(next.selectedPresetKey);
     setModeDetailsEditable(next.modeDetailsEditable);
     setModeDetailsTitle(next.modeDetailsTitle);
-    setModeFormValues(buildFormValuesFromPreset(preset));
+    setModeFormValues(buildFormValuesFromPreset(preset, availableRoundTypes));
     setActiveTab('rules');
     setError(null);
   };
@@ -256,7 +245,7 @@ export function HostSetupPage() {
     const next = openCustomCardFlow({ gameModes, selectedPresetKey });
     if (next.basePreset) {
       setSelectedPresetKey(next.basePreset.key);
-      setModeFormValues(buildFormValuesFromPreset(next.basePreset));
+      setModeFormValues(buildFormValuesFromPreset(next.basePreset, availableRoundTypes));
     }
     setModeDetailsEditable(next.modeDetailsEditable);
     setModeDetailsTitle(next.modeDetailsTitle);
@@ -265,8 +254,12 @@ export function HostSetupPage() {
   };
 
   const onSavePreset = async () => {
+    if (availableRoundTypes.length === 0) {
+      return;
+    }
+
     try {
-      const modeConfig = buildModeConfig(modeFormValues);
+      const modeConfig = buildModeConfig(modeFormValues, availableRoundTypes);
       const next = await saveCurrentPresetFlow({
         presetName: newPresetName,
         modeConfig,
@@ -274,8 +267,7 @@ export function HostSetupPage() {
       });
       setGameModes(next.gameModes);
       setSelectedPresetKey(next.selectedPresetKey);
-      setModeFormValues(buildFormValuesFromPreset(next.savedPreset));
-      setSaveAsPreset(false);
+      setModeFormValues(buildFormValuesFromPreset(next.savedPreset, availableRoundTypes));
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -398,13 +390,16 @@ export function HostSetupPage() {
       return;
     }
 
+    if (availableRoundTypes.length === 0) {
+      return;
+    }
+
     setStartGameBusy(true);
     try {
-      const modeConfig = buildModeConfig(modeFormValues);
+      const modeConfig = buildModeConfig(modeFormValues, availableRoundTypes);
       const teamNames = parseTeamNames(setupTeams);
       const lobbyState = await ensurePhoneLobbyFlow({
         state: stateRef.current,
-        hostName,
         selectedPresetKey,
         modeDetailsTitle,
         modeConfig,
@@ -435,16 +430,13 @@ export function HostSetupPage() {
     }
   };
 
-  const requiredPhoneRoundTypes = getRequiredPhoneRoundTypes(modeFormValues);
+  const requiredPhoneRoundTypes = getRequiredPhoneRoundTypes(modeFormValues, availableRoundTypes);
   const parsedTeamNames = parseTeamNames(setupTeams);
-  const hasHostName = hostName.trim().length > 0;
   const hasTeams = parsedTeamNames.length > 0;
   const hasAtLeastOneSource = localSources.length > 0;
-  const startGameDisabled = !hasHostName || !hasTeams || (!runtimeTestMode && !hasAtLeastOneSource);
+  const startGameDisabled = !hasTeams || (!runtimeTestMode && !hasAtLeastOneSource);
   let startGameHint: string | null = null;
-  if (!hasHostName) {
-    startGameHint = 'Enter a host name first.';
-  } else if (!hasTeams) {
+  if (!hasTeams) {
     startGameHint = 'Add at least one team name before starting.';
   } else if (!runtimeTestMode && !hasAtLeastOneSource) {
     startGameHint = 'Add at least one media source or enable test mode before starting.';
@@ -504,15 +496,11 @@ export function HostSetupPage() {
           {activeTab === 'startscreen' && (
             <GameModeSelectionTab
               gameModes={gameModes}
-              runtimeTestMode={runtimeTestMode}
-              runtimeConfigBusy={runtimeConfigBusy}
-              youtubeApiConfigured={youtubeApiConfigured}
-              spotifyConnected={spotifyConnected}
-              spotifyAuthBusy={spotifyAuthBusy}
-              onToggleRuntimeTestMode={onToggleRuntimeTestMode}
-              onConnectSpotify={connectSpotify}
+              selectedPresetKey={selectedPresetKey}
+              customModeSelected={modeDetailsEditable}
               onSelectPreset={onSelectPreset}
               onSelectCustom={onSelectCustom}
+              runtimeConfigBusy={runtimeConfigBusy}
             />
           )}
 
@@ -521,11 +509,22 @@ export function HostSetupPage() {
               modeDetailsTitle={modeDetailsTitle}
               modeDetailsEditable={modeDetailsEditable}
               modeFormValues={modeFormValues}
+              availableRoundTypes={availableRoundTypes}
               requiredPhoneRoundTypes={requiredPhoneRoundTypes}
-              saveAsPreset={saveAsPreset}
               newPresetName={newPresetName}
               onFieldChange={onFieldChange}
-              onSaveAsPresetChange={setSaveAsPreset}
+              onRoundRuleChange={(roundKind, nextValues) => {
+                setModeFormValues((previous) => ({
+                  ...previous,
+                  roundRules: {
+                    ...previous.roundRules,
+                    [roundKind]: {
+                      enabled: nextValues.enabled ?? previous.roundRules[roundKind]?.enabled ?? false,
+                      every_n_songs: nextValues.every_n_songs ?? previous.roundRules[roundKind]?.every_n_songs ?? '',
+                    },
+                  },
+                }));
+              }}
               onNewPresetNameChange={setNewPresetName}
               onSavePreset={onSavePreset}
               onContinue={() => setActiveTab('sources')}
@@ -534,8 +533,12 @@ export function HostSetupPage() {
 
           {activeTab === 'sources' && (
             <SourcePlayerControlTab
-              hostName={hostName}
               setupTeams={setupTeams}
+              spotifyConnected={spotifyConnected}
+              spotifyAuthBusy={spotifyAuthBusy}
+              youtubeApiConfigured={youtubeApiConfigured}
+              runtimeTestMode={runtimeTestMode}
+              runtimeConfigBusy={runtimeConfigBusy}
               newSourceType={newSourceType}
               newSourceValue={newSourceValue}
               localSources={localSources}
@@ -544,10 +547,11 @@ export function HostSetupPage() {
               startGameDisabled={startGameDisabled}
               startGameHint={startGameHint}
               folderInputRef={folderInputRef}
-              onHostNameChange={setHostName}
+              onToggleRuntimeTestMode={onToggleRuntimeTestMode}
               onSetupTeamsChange={setSetupTeams}
               onSourceTypeChange={setNewSourceType}
               onSourceValueChange={setNewSourceValue}
+              onConnectSpotify={connectSpotify}
               onPickLocalFolder={pickLocalFolder}
               onAddSource={addLocalSource}
               onRemoveSource={removeLocalSource}
