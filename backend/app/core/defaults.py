@@ -13,8 +13,8 @@ DEFAULT_PRESET_KEY = "classic_audio"
 DEFAULT_MODE_TITLE = "Game Mode Details"
 
 DEFAULT_BONUS_POINTS_BOTH = 1
-DEFAULT_WRONG_GUESS_PENALTY = 0
-DEFAULT_REQUIRED_POINTS_TO_WIN = 15
+DEFAULT_WRONG_GUESS_PENALTY = 1
+DEFAULT_REQUIRED_POINTS_TO_WIN = 42
 
 ROUND_TYPE_DEFINITIONS: tuple[RoundTypeDefinition, ...] = (
     RoundTypeDefinition(kind="audio", label="Audio rounds", default_every_n_songs=1),

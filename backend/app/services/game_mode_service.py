@@ -20,6 +20,7 @@ from app.core.defaults import (
 class RoundTypeRule:
     kind: str
     every_n_songs: int
+    options: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -69,8 +70,15 @@ class GameModePreset:
                 raise ValueError(f"Frequency for '{kind}' must be >= 1")
             if kind in seen_kinds:
                 raise ValueError(f"Round kind '{kind}' appears more than once")
+            normalized_options = rule.options if isinstance(rule.options, dict) else {}
             seen_kinds.add(kind)
-            normalized_rules.append(RoundTypeRule(kind=kind, every_n_songs=int(rule.every_n_songs)))
+            normalized_rules.append(
+                RoundTypeRule(
+                    kind=kind,
+                    every_n_songs=int(rule.every_n_songs),
+                    options=normalized_options,
+                )
+            )
 
         self.round_rules = normalized_rules
 
@@ -87,6 +95,7 @@ class GameModePreset:
                 {
                     "kind": rule.kind,
                     "every_n_songs": rule.every_n_songs,
+                    "options": rule.options,
                 }
                 for rule in self.round_rules
             ],
@@ -100,6 +109,7 @@ class GameModePreset:
             RoundTypeRule(
                 kind=str(item.get("kind") or "").strip(),
                 every_n_songs=int(item.get("every_n_songs") or 0),
+                options=item.get("options") if isinstance(item.get("options"), dict) else {},
             )
             for item in rules_raw
             if isinstance(item, dict)
@@ -184,6 +194,50 @@ class GameModeService:
 
     def round_type_requires_phone_connections(self, round_kind: str) -> bool:
         return ROUND_TYPE_PHONE_REQUIREMENTS.get(round_kind.strip().lower(), False)
+
+    def get_round_rule(self, preset: GameModePreset, round_kind: str) -> RoundTypeRule | None:
+        normalized_kind = round_kind.strip().lower()
+        return next((rule for rule in preset.round_rules if rule.kind == normalized_kind), None)
+
+    def resolve_stage_durations_for_round(self, preset: GameModePreset, round_kind: str) -> list[int]:
+        """Resolve stage durations for a specific round kind, using per-round options when present."""
+        durations = [int(value) for value in preset.stage_durations]
+        rule = self.get_round_rule(preset, round_kind)
+        if not rule or round_kind.strip().lower() != "audio":
+            return durations
+
+        options = rule.options if isinstance(rule.options, dict) else {}
+        resolved: list[int] = []
+        for index in range(3):
+            key = f"snippet{index + 1}Duration"
+            raw = options.get(key, durations[index] if index < len(durations) else 0)
+            try:
+                value = int(raw)
+            except (TypeError, ValueError):
+                value = durations[index] if index < len(durations) else 0
+            fallback = durations[index] if index < len(durations) else 12
+            resolved.append(value if value > 0 else fallback)
+        return resolved
+
+    def resolve_stage_points_for_round(self, preset: GameModePreset, round_kind: str) -> list[int]:
+        """Resolve stage points for a specific round kind, using per-round options when present."""
+        points = [int(value) for value in preset.stage_points]
+        rule = self.get_round_rule(preset, round_kind)
+        if not rule or round_kind.strip().lower() != "audio":
+            return points
+
+        options = rule.options if isinstance(rule.options, dict) else {}
+        resolved: list[int] = []
+        for index in range(3):
+            key = f"snippet{index + 1}Points"
+            raw = options.get(key, points[index] if index < len(points) else 0)
+            try:
+                value = int(raw)
+            except (TypeError, ValueError):
+                value = points[index] if index < len(points) else 0
+            fallback = points[index] if index < len(points) else 0
+            resolved.append(value if value >= 0 else fallback)
+        return resolved
 
     def mode_requires_phone_connections(self, preset: GameModePreset) -> bool:
         return any(self.round_type_requires_phone_connections(rule.kind) for rule in preset.round_rules)

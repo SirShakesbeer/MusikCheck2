@@ -75,6 +75,10 @@ from app.services.service_container import (
 
 router = APIRouter()
 
+from .round_types import router as round_types_router
+
+router.include_router(round_types_router)
+
 
 @router.get("/modes")
 def list_modes() -> dict:
@@ -93,7 +97,7 @@ def list_game_modes() -> dict:
             wrong_guess_penalty=preset.wrong_guess_penalty,
             required_points_to_win=preset.required_points_to_win,
             round_rules=[
-                RoundTypeRuleState(kind=rule.kind, every_n_songs=rule.every_n_songs)
+                RoundTypeRuleState(kind=rule.kind, every_n_songs=rule.every_n_songs, options=rule.options)
                 for rule in preset.round_rules
             ],
             filters=GameModeFiltersState(
@@ -144,7 +148,7 @@ def create_game_mode(payload: CreateGameModePresetRequest) -> dict:
             stage_durations=payload.config.stage_durations,
             stage_points=payload.config.stage_points,
             round_rules=[
-                RoundTypeRule(kind=rule.kind, every_n_songs=rule.every_n_songs)
+                RoundTypeRule(kind=rule.kind, every_n_songs=rule.every_n_songs, options=rule.options)
                 for rule in payload.config.round_rules
             ],
             bonus_points_both=payload.config.bonus_points_both,
@@ -163,7 +167,7 @@ def create_game_mode(payload: CreateGameModePresetRequest) -> dict:
                 wrong_guess_penalty=saved.wrong_guess_penalty,
                 required_points_to_win=saved.required_points_to_win,
                 round_rules=[
-                    RoundTypeRuleState(kind=rule.kind, every_n_songs=rule.every_n_songs)
+                    RoundTypeRuleState(kind=rule.kind, every_n_songs=rule.every_n_songs, options=rule.options)
                     for rule in saved.round_rules
                 ],
                 filters=GameModeFiltersState(
@@ -203,7 +207,7 @@ def validate_game_mode(payload: ValidateGameModeRequest) -> dict:
             stage_durations=payload.config.stage_durations,
             stage_points=payload.config.stage_points,
             round_rules=[
-                RoundTypeRule(kind=rule.kind, every_n_songs=rule.every_n_songs)
+                RoundTypeRule(kind=rule.kind, every_n_songs=rule.every_n_songs, options=rule.options)
                 for rule in payload.config.round_rules
             ],
             bonus_points_both=payload.config.bonus_points_both,
@@ -520,7 +524,7 @@ async def create_lobby(payload: CreateLobbyRequest, db: Session = Depends(get_db
                 stage_durations=payload.mode_config.stage_durations,
                 stage_points=payload.mode_config.stage_points,
                 round_rules=[
-                    RoundTypeRule(kind=rule.kind, every_n_songs=rule.every_n_songs)
+                    RoundTypeRule(kind=rule.kind, every_n_songs=rule.every_n_songs, options=rule.options)
                     for rule in payload.mode_config.round_rules
                 ],
                 bonus_points_both=payload.mode_config.bonus_points_both,
@@ -581,7 +585,7 @@ async def save_lobby_setup(code: str, payload: SaveLobbySetupRequest, db: Sessio
                 stage_durations=payload.mode_config.stage_durations,
                 stage_points=payload.mode_config.stage_points,
                 round_rules=[
-                    RoundTypeRule(kind=rule.kind, every_n_songs=rule.every_n_songs)
+                    RoundTypeRule(kind=rule.kind, every_n_songs=rule.every_n_songs, options=rule.options)
                     for rule in payload.mode_config.round_rules
                 ],
                 bonus_points_both=payload.mode_config.bonus_points_both,
@@ -655,7 +659,7 @@ async def update_lobby_mode(code: str, payload: UpdateLobbyModeRequest, db: Sess
                 stage_durations=payload.mode_config.stage_durations,
                 stage_points=payload.mode_config.stage_points,
                 round_rules=[
-                    RoundTypeRule(kind=rule.kind, every_n_songs=rule.every_n_songs)
+                    RoundTypeRule(kind=rule.kind, every_n_songs=rule.every_n_songs, options=rule.options)
                     for rule in payload.mode_config.round_rules
                 ],
                 bonus_points_both=payload.mode_config.bonus_points_both,

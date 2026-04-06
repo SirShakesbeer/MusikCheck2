@@ -59,7 +59,10 @@ class GameEngine:
             "bonus_points_both": mode.bonus_points_both,
             "wrong_guess_penalty": mode.wrong_guess_penalty,
             "required_points_to_win": mode.required_points_to_win,
-            "round_rules": [{"kind": rule.kind, "every_n_songs": rule.every_n_songs} for rule in mode.round_rules],
+            "round_rules": [
+                {"kind": rule.kind, "every_n_songs": rule.every_n_songs, "options": rule.options}
+                for rule in mode.round_rules
+            ],
             "filters": mode.filters,
         }
         return json.dumps(config_dict)
@@ -76,7 +79,11 @@ class GameEngine:
                 stage_durations=data.get("stage_durations", []),
                 stage_points=data.get("stage_points", []),
                 round_rules=[
-                    RoundTypeRule(kind=rule["kind"], every_n_songs=rule["every_n_songs"])
+                    RoundTypeRule(
+                        kind=rule["kind"],
+                        every_n_songs=rule["every_n_songs"],
+                        options=rule.get("options") if isinstance(rule.get("options"), dict) else {},
+                    )
                     for rule in data.get("round_rules", [])
                 ],
                 bonus_points_both=data.get("bonus_points_both", 1),
@@ -541,11 +548,12 @@ class GameEngine:
         song_number = runtime_state.song_number + 1
         runtime_state.song_number = song_number
         round_kind = self.mode_service.pick_round_kind(mode, song_number)
+        round_stage_durations = self.mode_service.resolve_stage_durations_for_round(mode, round_kind)
 
         selection = self._pick_round_media_selection(db, lobby.id, mode, round_kind)
         media_item = selection["media_item"]
-        snippet_offsets = self._compute_snippet_offsets(selection["track_duration_seconds"], mode.stage_durations)
-        snippet_spec = SnippetSpec(kind=round_kind, duration_seconds=mode.stage_durations[0], random_start=False)
+        snippet_offsets = self._compute_snippet_offsets(selection["track_duration_seconds"], round_stage_durations)
+        snippet_spec = SnippetSpec(kind=round_kind, duration_seconds=round_stage_durations[0], random_start=False)
         processed = self.media_processing.build_snippet(media_item, snippet_spec)
 
         active_round = self._get_active_round(db, lobby.id)
@@ -601,10 +609,11 @@ class GameEngine:
         if round_state.status == "finished":
             raise ValueError("Round is finished")
 
-        if stage_index < 0 or stage_index >= len(mode.stage_durations):
+        stage_durations = self.mode_service.resolve_stage_durations_for_round(mode, round_state.round_kind)
+        if stage_index < 0 or stage_index >= len(stage_durations):
             raise ValueError("Requested stage is out of range")
 
-        spec = SnippetSpec(kind=round_state.round_kind, duration_seconds=mode.stage_durations[stage_index], random_start=False)
+        spec = SnippetSpec(kind=round_state.round_kind, duration_seconds=stage_durations[stage_index], random_start=False)
         media_item = MediaItem(
             source_id=round_state.media_source_id,
             title=round_state.media_title,
@@ -878,8 +887,9 @@ class GameEngine:
             if not team:
                 raise ValueError("Team not found")
             max_stage_reached = int(round_state.max_stage_reached or round_state.stage_index)
-            points_stage = max(0, min(len(mode.stage_points) - 1, max_stage_reached))
-            points = mode.stage_points[points_stage]
+            stage_points = self.mode_service.resolve_stage_points_for_round(mode, round_state.round_kind)
+            points_stage = max(0, min(len(stage_points) - 1, max_stage_reached))
+            points = stage_points[points_stage]
             team.score += points
             db.commit()
             round_state.status = "finished"
@@ -893,8 +903,9 @@ class GameEngine:
         if not round_state:
             raise ValueError("No active round")
 
+        stage_durations = self.mode_service.resolve_stage_durations_for_round(mode, round_state.round_kind)
         next_index = round_state.stage_index + 1
-        if next_index >= len(mode.stage_durations):
+        if next_index >= len(stage_durations):
             round_state.status = "finished"
             db.commit()
             return False
@@ -917,8 +928,9 @@ class GameEngine:
 
         mode = self._get_lobby_mode(lobby, db)
         max_stage_reached = int(round_state.max_stage_reached or round_state.stage_index)
-        points_stage = max(0, min(len(mode.stage_points) - 1, max_stage_reached))
-        fact_points = mode.stage_points[points_stage]
+        stage_points = self.mode_service.resolve_stage_points_for_round(mode, round_state.round_kind)
+        points_stage = max(0, min(len(stage_points) - 1, max_stage_reached))
+        fact_points = stage_points[points_stage]
         both_bonus = max(0, int(mode.bonus_points_both))
 
         team_round_state = (
@@ -1015,8 +1027,10 @@ class GameEngine:
         current_round = None
         round_team_states: list[RoundTeamState] = []
         if runtime:
-            snippet_offsets = self._deserialize_offsets(runtime.snippet_start_offsets, len(mode.stage_durations))
-            stage_duration = mode.stage_durations[runtime.stage_index]
+            stage_durations = self.mode_service.resolve_stage_durations_for_round(mode, runtime.round_kind)
+            stage_points = self.mode_service.resolve_stage_points_for_round(mode, runtime.round_kind)
+            snippet_offsets = self._deserialize_offsets(runtime.snippet_start_offsets, len(stage_durations))
+            stage_duration = stage_durations[runtime.stage_index]
             start_at_seconds = snippet_offsets[runtime.stage_index] if runtime.stage_index < len(snippet_offsets) else 0
             reveal_title: str | None = None
             reveal_artist: str | None = None
@@ -1032,7 +1046,7 @@ class GameEngine:
                 stage_index=runtime.stage_index,
                 max_stage_reached=int(runtime.max_stage_reached or runtime.stage_index),
                 stage_duration_seconds=stage_duration,
-                points_available=mode.stage_points[runtime.stage_index],
+                points_available=stage_points[runtime.stage_index],
                 snippet_url=runtime.snippet_url,
                 playback_provider=runtime.playback_provider,
                 playback_ref=runtime.playback_ref,
@@ -1092,7 +1106,7 @@ class GameEngine:
             wrong_guess_penalty=mode.wrong_guess_penalty,
             required_points_to_win=mode.required_points_to_win,
             round_rules=[
-                RoundTypeRuleState(kind=rule.kind, every_n_songs=rule.every_n_songs)
+                RoundTypeRuleState(kind=rule.kind, every_n_songs=rule.every_n_songs, options=rule.options)
                 for rule in mode.round_rules
             ],
             filters=GameModeFiltersState(

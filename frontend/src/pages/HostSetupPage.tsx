@@ -33,7 +33,7 @@ import {
   type SourceType,
 } from '../services/mediaSourceController';
 import { connectLobbySocket } from '../services/ws';
-import type { GameModePresetState, GameState, RoundTypeDefinition } from '../types';
+import type { GameModePresetState, GameState, RoundTypeDefinition, RoundTypeMetadata } from '../types';
 import { HomeButton } from '../components/HomeButton';
 
 type SetupTab = 'startscreen' | 'rules' | 'sources';
@@ -69,6 +69,8 @@ export function HostSetupPage() {
 
   const [gameModes, setGameModes] = useState<GameModePresetState[]>([]);
   const [availableRoundTypes, setAvailableRoundTypes] = useState<RoundTypeDefinition[]>([]);
+  // Store full round type metadata for dynamic options
+  const [roundTypesMetadata, setRoundTypesMetadata] = useState<RoundTypeMetadata[]>([]);
   const [selectedPresetKey, setSelectedPresetKey] = useState<string>(DEFAULT_PRESET_KEY);
   const [modeDetailsEditable, setModeDetailsEditable] = useState<boolean>(false);
   const [modeDetailsTitle, setModeDetailsTitle] = useState<string>(DEFAULT_MODE_DETAILS_TITLE);
@@ -120,15 +122,17 @@ export function HostSetupPage() {
 
     const loadRuntimeConfig = async () => {
       try {
-        const [runtimeResult, spotifyResult, roundTypesResult, modesResult] = await Promise.all([
+        const [runtimeResult, spotifyResult, roundTypesResult, roundTypesMetaResult, modesResult] = await Promise.all([
           api.getRuntimeConfig(),
           api.getSpotifyStatus(),
           api.getRoundTypes(),
+          api.getRoundTypesMetadata(),
           api.getGameModes(),
         ]);
 
-        const roundTypes = roundTypesResult.data.round_types;
+        const roundTypes = roundTypesResult.data?.round_types ?? [];
         setAvailableRoundTypes(roundTypes);
+        setRoundTypesMetadata(roundTypesMetaResult.data?.round_types ?? []);
         setRuntimeTestMode(Boolean(runtimeResult.data.test_mode));
         setYoutubeApiConfigured(Boolean(runtimeResult.data.youtube_api_key_configured));
         setSpotifyConnected(Boolean(spotifyResult.data.connected));
@@ -516,20 +520,25 @@ export function HostSetupPage() {
               modeDetailsEditable={modeDetailsEditable}
               modeFormValues={modeFormValues}
               availableRoundTypes={availableRoundTypes}
+              roundTypesMetadata={roundTypesMetadata}
               requiredPhoneRoundTypes={requiredPhoneRoundTypes}
               newPresetName={newPresetName}
               onFieldChange={onFieldChange}
               onRoundRuleChange={(roundKind, nextValues) => {
-                setModeFormValues((previous) => ({
-                  ...previous,
-                  roundRules: {
-                    ...previous.roundRules,
-                    [roundKind]: {
-                      enabled: nextValues.enabled ?? previous.roundRules[roundKind]?.enabled ?? false,
-                      every_n_songs: nextValues.every_n_songs ?? previous.roundRules[roundKind]?.every_n_songs ?? '',
+                setModeFormValues((previous) => {
+                  const prevRule = previous.roundRules[roundKind] || {};
+                  // Merge all fields (enabled, every_n_songs, and dynamic options)
+                  return {
+                    ...previous,
+                    roundRules: {
+                      ...previous.roundRules,
+                      [roundKind]: {
+                        ...prevRule,
+                        ...nextValues,
+                      },
                     },
-                  },
-                }));
+                  };
+                });
               }}
               onNewPresetNameChange={setNewPresetName}
               onSavePreset={onSavePreset}

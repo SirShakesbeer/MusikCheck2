@@ -1,3 +1,28 @@
+// --- Round type option metadata for dynamic rule setup ---
+export type RoundTypeOptionMetadata = {
+  name: string;
+  label: string;
+  description?: string;
+  type: 'int' | 'float' | 'str' | 'bool';
+  default?: any;
+  min?: number;
+  max?: number;
+  choices?: any[];
+};
+
+export type RoundTypeMetadata = {
+  kind: string;
+  label: string;
+  description?: string;
+  options: RoundTypeOptionMetadata[];
+};
+
+export type RoundTypesMetadataEnvelope = {
+  ok: boolean;
+  data: {
+    round_types: RoundTypeMetadata[];
+  };
+};
 export type TeamState = {
   id: string;
   name: string;
@@ -63,6 +88,7 @@ export type GameState = {
 export type RoundTypeRule = {
   kind: string;
   every_n_songs: number;
+  options?: Record<string, unknown>;
 };
 
 export type RoundTypeDefinition = {

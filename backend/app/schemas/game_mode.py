@@ -1,4 +1,5 @@
 from pydantic import BaseModel, Field
+from typing import Any
 
 from app.core.defaults import (
     DEFAULT_BONUS_POINTS_BOTH,
@@ -10,6 +11,7 @@ from app.core.defaults import (
 class RoundTypeRuleState(BaseModel):
     kind: str = Field(min_length=1)
     every_n_songs: int = Field(ge=1)
+    options: dict[str, Any] = Field(default_factory=dict)
 
 
 class RoundTypeDefinitionState(BaseModel):

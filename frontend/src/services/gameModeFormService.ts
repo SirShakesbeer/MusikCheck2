@@ -12,6 +12,7 @@ export const ROUND_TYPES_REQUIRING_PHONES = new Set<string>(MODE_FORM_DEFAULTS.r
 export type ModeRoundRuleValues = {
   enabled: boolean;
   every_n_songs: string;
+  [option: string]: string | boolean | number;
 };
 
 export type ModeFormValues = {
@@ -47,6 +48,9 @@ function buildRoundRuleValues(
     roundRuleValues[roundType.kind] = {
       enabled: Boolean(presetRule),
       every_n_songs: String(presetRule?.every_n_songs ?? roundType.default_every_n_songs),
+      ...(presetRule?.options && typeof presetRule.options === 'object'
+        ? (presetRule.options as Record<string, string | boolean | number>)
+        : {}),
     };
   }
 
@@ -120,7 +124,7 @@ export function buildModeConfig(values: ModeFormValues, roundTypes: RoundTypeDef
   const stagePoints = [values.snippet1Points, values.snippet2Points, values.snippet3Points].map((value) =>
     Number.parseInt(value, 10),
   );
-  const rules: { kind: string; every_n_songs: number }[] = [];
+  const rules: { kind: string; every_n_songs: number; options: Record<string, string | boolean | number> }[] = [];
 
   const orderedRoundTypes = roundTypes.length > 0
     ? roundTypes
@@ -134,7 +138,21 @@ export function buildModeConfig(values: ModeFormValues, roundTypes: RoundTypeDef
 
     const everySongs = Number.parseInt(ruleValues.every_n_songs, 10);
     if (Number.isFinite(everySongs) && everySongs > 0) {
-      rules.push({ kind: roundType.kind, every_n_songs: everySongs });
+      const options = Object.fromEntries(
+        Object.entries(ruleValues).filter(([key, value]) => {
+          if (key === 'enabled' || key === 'every_n_songs') {
+            return false;
+          }
+          if (typeof value === 'string') {
+            return value.trim().length > 0;
+          }
+          if (typeof value === 'number') {
+            return Number.isFinite(value);
+          }
+          return typeof value === 'boolean';
+        }),
+      );
+      rules.push({ kind: roundType.kind, every_n_songs: everySongs, options });
     }
   }
 

@@ -3,9 +3,9 @@
     "key": "classic_audio",
     "name": "Classic Audio",
     "stage_durations": [
+      1,
       2,
-      4,
-      6
+      3
     ],
     "stage_points": [
       3,
@@ -13,50 +13,58 @@
       1
     ],
     "bonus_points_both": 1,
-    "wrong_guess_penalty": 0,
-    "required_points_to_win": 15,
+    "wrong_guess_penalty": 1,
+    "required_points_to_win": 42,
     "round_rules": [
       {
         "kind": "audio",
-        "every_n_songs": 1
-      }
-    ],
-    "filters": {}
-  },
-  {
-    "key": "mixed_media",
-    "name": "Mixed Media",
-    "stage_durations": [
-      2,
-      4,
-      6
-    ],
-    "stage_points": [
-      3,
-      2,
-      1
-    ],
-    "bonus_points_both": 1,
-    "wrong_guess_penalty": 0,
-    "required_points_to_win": 15,
-    "round_rules": [
-      {
-        "kind": "audio",
-        "every_n_songs": 1
-      },
-      {
-        "kind": "video",
-        "every_n_songs": 4
-      },
-      {
-        "kind": "lyrics",
-        "every_n_songs": 6
+        "every_n_songs": 1,
+        "options": {}
       }
     ],
     "filters": {
       "release_year_from": null,
       "release_year_to": null,
-      "language": ""
+      "language": null
+    }
+  },
+  {
+    "key": "mixed_media",
+    "name": "Mixed Media",
+    "stage_durations": [
+      1,
+      2,
+      3
+    ],
+    "stage_points": [
+      3,
+      2,
+      1
+    ],
+    "bonus_points_both": 1,
+    "wrong_guess_penalty": 1,
+    "required_points_to_win": 42,
+    "round_rules": [
+      {
+        "kind": "audio",
+        "every_n_songs": 1,
+        "options": {}
+      },
+      {
+        "kind": "video",
+        "every_n_songs": 4,
+        "options": {}
+      },
+      {
+        "kind": "lyrics",
+        "every_n_songs": 6,
+        "options": {}
+      }
+    ],
+    "filters": {
+      "release_year_from": null,
+      "release_year_to": null,
+      "language": null
     }
   },
   {
@@ -78,11 +86,13 @@
     "round_rules": [
       {
         "kind": "audio",
-        "every_n_songs": 1
+        "every_n_songs": 1,
+        "options": {}
       },
       {
         "kind": "video",
-        "every_n_songs": 4
+        "every_n_songs": 4,
+        "options": {}
       }
     ],
     "filters": {
