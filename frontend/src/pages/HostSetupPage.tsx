@@ -34,6 +34,7 @@ import {
 } from '../services/mediaSourceController';
 import { connectLobbySocket } from '../services/ws';
 import type { GameModePresetState, GameState, RoundTypeDefinition } from '../types';
+import { HomeButton } from '../components/HomeButton';
 
 type SetupTab = 'startscreen' | 'rules' | 'sources';
 
@@ -460,8 +461,13 @@ export function HostSetupPage() {
     <>
       <main>
         <Card>
-          <StatusChip>Host Control Room</StatusChip>
-          <h1 className="page-heading mt-2">MusikCheck 2 Setup</h1>
+          <StatusChip>Round Setup</StatusChip>
+          <div className='flex flex-row'>
+            <h1 className="page-heading mt-2">MusikCheck 2</h1>
+            <div className="ml-auto">
+              <HomeButton />
+            </div>
+          </div>
         </Card>
 
         <Card>

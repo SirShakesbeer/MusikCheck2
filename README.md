@@ -238,7 +238,34 @@ docker compose up --build
 
 ## Local Development
 
+
 ### Backend
+
+#### Python Virtual Environment Setup (Recommended)
+
+1. Install Python 3.10, 3.11, or 3.12 from https://www.python.org/downloads/ (avoid Python 3.14 for now).
+2. Open a terminal in the project root.
+3. Create a new virtual environment:
+  ```bash
+  python -m venv .venv
+  ```
+4. Activate the virtual environment:
+  - On Windows:
+    ```bash
+    .venv\Scripts\activate
+    ```
+  - On macOS/Linux:
+    ```bash
+    source .venv/bin/activate
+    ```
+5. Upgrade pip and install dependencies:
+  ```bash
+  pip install --upgrade pip
+  pip install -r backend/requirements.txt
+  ```
+
+Continue with the steps below to run the backend server.
+
 
 ```bash
 cd backend
