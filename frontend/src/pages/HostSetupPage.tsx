@@ -9,7 +9,7 @@ import { Button, Card, StatusChip } from '../components/ui';
 import {
   DEFAULT_MODE_DETAILS_TITLE,
   DEFAULT_PRESET_KEY,
-  DEFAULT_SETUP_TEAMS_TEXT,
+  DEFAULT_TEAM_NAMES,
 } from '../config/defaults';
 import { api } from '../services/api';
 import {
@@ -38,9 +38,8 @@ import { HomeButton } from '../components/HomeButton';
 
 type SetupTab = 'startscreen' | 'rules' | 'sources';
 
-function parseTeamNames(raw: string): string[] {
+function normalizeTeamNames(raw: string[]): string[] {
   const names = raw
-    .split(',')
     .map((name) => name.trim())
     .filter((name) => name.length > 0);
 
@@ -61,7 +60,8 @@ export function HostSetupPage() {
   const launchTransitionTimeoutRef = useRef<number | null>(null);
   const [activeTab, setActiveTab] = useState<SetupTab>('startscreen');
 
-  const [setupTeams, setSetupTeams] = useState(DEFAULT_SETUP_TEAMS_TEXT);
+  const [setupTeamNames, setSetupTeamNames] = useState<string[]>([...DEFAULT_TEAM_NAMES]);
+  const [newTeamName, setNewTeamName] = useState<string>('');
   const [localSources, setLocalSources] = useState<LocalSource[]>([]);
   const [newSourceType, setNewSourceType] = useState<SourceType>('local-folder');
   const [newSourceValue, setNewSourceValue] = useState('');
@@ -147,7 +147,7 @@ export function HostSetupPage() {
           ]);
 
           setState(stateResult.data);
-          setSetupTeams(setupResult.data.teams.join(', '));
+          setSetupTeamNames(normalizeTeamNames(setupResult.data.teams));
           setSelectedPresetKey(setupResult.data.preset_key || stateResult.data.mode_key || DEFAULT_PRESET_KEY);
           setModeDetailsTitle(setupResult.data.mode_title || stateResult.data.mode.name || DEFAULT_MODE_DETAILS_TITLE);
           setModeFormValues(buildFormValuesFromPreset(stateResult.data.mode, roundTypes));
@@ -191,7 +191,7 @@ export function HostSetupPage() {
     }
 
     const modeConfig = buildModeConfig(modeFormValues, availableRoundTypes);
-    const teamNames = parseTeamNames(setupTeams);
+    const teamNames = normalizeTeamNames(setupTeamNames);
     if (teamNames.length < 1) {
       return;
     }
@@ -219,7 +219,7 @@ export function HostSetupPage() {
     availableRoundTypes,
     selectedPresetKey,
     sessionExpired,
-    setupTeams,
+    setupTeamNames,
     spotifyConnected,
     state?.lobby_code,
   ]);
@@ -402,7 +402,7 @@ export function HostSetupPage() {
     setStartGameBusy(true);
     try {
       const modeConfig = buildModeConfig(modeFormValues, availableRoundTypes);
-      const teamNames = parseTeamNames(setupTeams);
+      const teamNames = normalizeTeamNames(setupTeamNames);
       const lobbyState = await ensurePhoneLobbyFlow({
         state: stateRef.current,
         selectedPresetKey,
@@ -436,8 +436,7 @@ export function HostSetupPage() {
   };
 
   const requiredPhoneRoundTypes = getRequiredPhoneRoundTypes(modeFormValues, availableRoundTypes);
-  const parsedTeamNames = parseTeamNames(setupTeams);
-  const hasTeams = parsedTeamNames.length > 0;
+  const hasTeams = normalizeTeamNames(setupTeamNames).length > 0;
   const hasAtLeastOneSource = localSources.length > 0;
   const startGameDisabled = !hasTeams || (!runtimeTestMode && !hasAtLeastOneSource);
   let startGameHint: string | null = null;
@@ -446,6 +445,24 @@ export function HostSetupPage() {
   } else if (!runtimeTestMode && !hasAtLeastOneSource) {
     startGameHint = 'Add at least one media source or enable test mode before starting.';
   }
+
+  const addTeam = () => {
+    const nextName = newTeamName.trim();
+    if (!nextName) {
+      return;
+    }
+    setSetupTeamNames((previous) => {
+      const merged = normalizeTeamNames([...previous, nextName]);
+      return merged;
+    });
+    setNewTeamName('');
+    setError(null);
+  };
+
+  const removeTeam = (teamName: string) => {
+    setSetupTeamNames((previous) => previous.filter((name) => name.toLowerCase() !== teamName.toLowerCase()));
+    setError(null);
+  };
 
   if (sessionExpired) {
     return (
@@ -548,7 +565,8 @@ export function HostSetupPage() {
 
           {activeTab === 'sources' && (
             <SourcePlayerControlTab
-              setupTeams={setupTeams}
+              setupTeamNames={setupTeamNames}
+              newTeamName={newTeamName}
               spotifyConnected={spotifyConnected}
               spotifyAuthBusy={spotifyAuthBusy}
               youtubeApiConfigured={youtubeApiConfigured}
@@ -563,7 +581,9 @@ export function HostSetupPage() {
               startGameHint={startGameHint}
               folderInputRef={folderInputRef}
               onToggleRuntimeTestMode={onToggleRuntimeTestMode}
-              onSetupTeamsChange={setSetupTeams}
+              onNewTeamNameChange={setNewTeamName}
+              onAddTeam={addTeam}
+              onRemoveTeam={removeTeam}
               onSourceTypeChange={setNewSourceType}
               onSourceValueChange={setNewSourceValue}
               onConnectSpotify={connectSpotify}

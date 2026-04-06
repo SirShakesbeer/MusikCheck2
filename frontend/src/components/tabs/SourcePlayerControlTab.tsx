@@ -5,7 +5,8 @@ import type { LocalSource, SourceType } from '../../services/mediaSourceControll
 import type { GameState } from '../../types';
 
 type Props = {
-  setupTeams: string;
+  setupTeamNames: string[];
+  newTeamName: string;
   spotifyConnected: boolean;
   spotifyAuthBusy: boolean;
   newSourceType: SourceType;
@@ -19,7 +20,9 @@ type Props = {
   youtubeApiConfigured: boolean;
   runtimeTestMode: boolean;
   runtimeConfigBusy: boolean;
-  onSetupTeamsChange: (value: string) => void;
+  onNewTeamNameChange: (value: string) => void;
+  onAddTeam: () => void;
+  onRemoveTeam: (teamName: string) => void;
   onSourceTypeChange: (value: SourceType) => void;
   onSourceValueChange: (value: string) => void;
   onPickLocalFolder: () => void;
@@ -38,7 +41,8 @@ const SOURCE_TYPE_OPTIONS: { value: SourceType; label: string }[] = [
 ];
 
 export function SourcePlayerControlTab({
-  setupTeams,
+  setupTeamNames,
+  newTeamName,
   newSourceType,
   newSourceValue,
   localSources,
@@ -53,7 +57,9 @@ export function SourcePlayerControlTab({
   youtubeApiConfigured,
   runtimeConfigBusy,
   onToggleRuntimeTestMode,
-  onSetupTeamsChange,
+  onNewTeamNameChange,
+  onAddTeam,
+  onRemoveTeam,
   onSourceTypeChange,
   onSourceValueChange,
   onPickLocalFolder,
@@ -66,13 +72,32 @@ export function SourcePlayerControlTab({
   return (
     <div>
 
-      <Field label="Team names (comma-separated)">
-        <input
-          value={setupTeams}
-          onChange={(event: ChangeEvent<HTMLInputElement>) => onSetupTeamsChange(event.target.value)}
-          placeholder="Team A, Team B"
-        />
-      </Field>
+      <div className="source-row">
+        <Field label="Team name">
+          <input
+            value={newTeamName}
+            onChange={(event: ChangeEvent<HTMLInputElement>) => onNewTeamNameChange(event.target.value)}
+            placeholder="Team A"
+          />
+        </Field>
+        <Button onClick={onAddTeam} type="button">
+          Add Team
+        </Button>
+      </div>
+
+      {setupTeamNames.length > 0 && (
+        <div className="source-list">
+          {setupTeamNames.map((teamName) => (
+            <div className="source-row" key={teamName}>
+              <strong>Team</strong>
+              <span>{teamName}</span>
+              <Button type="button" onClick={() => onRemoveTeam(teamName)} variant="danger" size="sm">
+                Remove
+              </Button>
+            </div>
+          ))}
+        </div>
+      )}
 
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <StatusChip tone={spotifyConnected ? 'ok' : 'warn'}>

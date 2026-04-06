@@ -3,7 +3,6 @@ export const WS_BASE_URL = import.meta.env.VITE_WS_BASE ?? 'ws://localhost:8000'
 
 export const DEFAULT_PRESET_KEY = 'classic_audio';
 export const DEFAULT_TEAM_NAMES = ['Team A', 'Team B'] as const;
-export const DEFAULT_SETUP_TEAMS_TEXT = DEFAULT_TEAM_NAMES.join(', ');
 export const DEFAULT_MODE_DETAILS_TITLE = 'Game Mode Details';
 
 export const DEFAULT_PLAYER_NAME = 'Player';

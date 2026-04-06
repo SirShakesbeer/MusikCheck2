@@ -363,10 +363,38 @@ class GameEngine:
         existing_teams = db.query(Team).filter(Team.lobby_id == lobby.id).all()
         existing_by_lower = {team.name.strip().lower(): team for team in existing_teams}
 
+        # Add any missing teams from setup
         for name in normalized_names:
             if name.lower() in existing_by_lower:
                 continue
             db.add(Team(lobby_id=lobby.id, name=name, score=0))
+
+        # Remove teams that are no longer present in setup
+        names_to_keep = {name.lower() for name in normalized_names}
+        teams_to_remove = [team for team in existing_teams if team.name.strip().lower() not in names_to_keep]
+
+        if teams_to_remove:
+            remove_ids = [team.id for team in teams_to_remove]
+
+            # Players can exist while host changes setup; unassign removed team references.
+            (
+                db.query(Player)
+                .filter(Player.lobby_id == lobby.id, Player.team_id.in_(remove_ids))
+                .update({Player.team_id: None}, synchronize_session=False)
+            )
+
+            # Clear per-round scoring rows linked to removed teams.
+            (
+                db.query(ActiveRoundTeamState)
+                .filter(ActiveRoundTeamState.team_id.in_(remove_ids))
+                .delete(synchronize_session=False)
+            )
+
+            (
+                db.query(Team)
+                .filter(Team.lobby_id == lobby.id, Team.id.in_(remove_ids))
+                .delete(synchronize_session=False)
+            )
 
         db.commit()
 
