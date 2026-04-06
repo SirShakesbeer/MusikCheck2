@@ -2,6 +2,7 @@ from fastapi import APIRouter
 from pydantic import BaseModel
 from typing import List, Optional, Any, Literal
 
+from app.core.defaults import ROUND_TYPE_OPTION_DEFINITIONS
 from app.services.service_container import game_mode_service
 
 router = APIRouter()
@@ -38,65 +39,8 @@ def get_round_types():
     for definition in available:
         kind = str(definition["kind"])
         label = str(definition["label"])
-        options: list[RoundTypeOptionMetadata] = []
-
-        if kind == "audio":
-            options = [
-                RoundTypeOptionMetadata(
-                    name="snippet1Duration",
-                    label="Snippet 1 duration (s)",
-                    description="Duration for snippet stage 1.",
-                    type="int",
-                    default=12,
-                    min=1,
-                    max=120,
-                ),
-                RoundTypeOptionMetadata(
-                    name="snippet1Points",
-                    label="Snippet 1 points",
-                    description="Points awarded for stage 1 guesses.",
-                    type="int",
-                    default=3,
-                    min=0,
-                    max=20,
-                ),
-                RoundTypeOptionMetadata(
-                    name="snippet2Duration",
-                    label="Snippet 2 duration (s)",
-                    description="Duration for snippet stage 2.",
-                    type="int",
-                    default=7,
-                    min=1,
-                    max=120,
-                ),
-                RoundTypeOptionMetadata(
-                    name="snippet2Points",
-                    label="Snippet 2 points",
-                    description="Points awarded for stage 2 guesses.",
-                    type="int",
-                    default=2,
-                    min=0,
-                    max=20,
-                ),
-                RoundTypeOptionMetadata(
-                    name="snippet3Duration",
-                    label="Snippet 3 duration (s)",
-                    description="Duration for snippet stage 3.",
-                    type="int",
-                    default=4,
-                    min=1,
-                    max=120,
-                ),
-                RoundTypeOptionMetadata(
-                    name="snippet3Points",
-                    label="Snippet 3 points",
-                    description="Points awarded for stage 3 guesses.",
-                    type="int",
-                    default=1,
-                    min=0,
-                    max=20,
-                ),
-            ]
+        raw_options = ROUND_TYPE_OPTION_DEFINITIONS.get(kind, ())
+        options = [RoundTypeOptionMetadata(**item) for item in raw_options]
 
         round_types.append(
             RoundTypeMetadata(

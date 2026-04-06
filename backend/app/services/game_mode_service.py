@@ -12,6 +12,7 @@ from app.core.defaults import (
     DEFAULT_REQUIRED_POINTS_TO_WIN,
     DEFAULT_WRONG_GUESS_PENALTY,
     ROUND_TYPE_DEFINITIONS,
+    ROUND_TYPE_OPTION_DEFINITIONS,
     ROUND_TYPE_PHONE_REQUIREMENTS,
 )
 
@@ -34,6 +35,45 @@ class GameModePreset:
     wrong_guess_penalty: int = DEFAULT_WRONG_GUESS_PENALTY
     required_points_to_win: int = DEFAULT_REQUIRED_POINTS_TO_WIN
     filters: dict[str, Any] = field(default_factory=dict)
+
+    @staticmethod
+    def _normalize_option_value(kind: str, option_name: str, raw_value: Any, definition: dict[str, Any]) -> Any:
+        option_type = str(definition.get("type") or "").strip().lower()
+        if option_type == "int":
+            try:
+                value = int(raw_value)
+            except (TypeError, ValueError):
+                raise ValueError(f"Option '{option_name}' for round '{kind}' must be an integer") from None
+        elif option_type == "float":
+            try:
+                value = float(raw_value)
+            except (TypeError, ValueError):
+                raise ValueError(f"Option '{option_name}' for round '{kind}' must be a number") from None
+        elif option_type == "bool":
+            if isinstance(raw_value, bool):
+                value = raw_value
+            elif isinstance(raw_value, str) and raw_value.strip().lower() in {"true", "false"}:
+                value = raw_value.strip().lower() == "true"
+            else:
+                raise ValueError(f"Option '{option_name}' for round '{kind}' must be a boolean")
+        elif option_type == "str":
+            value = str(raw_value)
+        else:
+            raise ValueError(f"Unsupported option type '{option_type}' for round '{kind}'")
+
+        minimum = definition.get("min")
+        maximum = definition.get("max")
+        if isinstance(value, (int, float)):
+            if minimum is not None and value < minimum:
+                raise ValueError(f"Option '{option_name}' for round '{kind}' must be >= {minimum}")
+            if maximum is not None and value > maximum:
+                raise ValueError(f"Option '{option_name}' for round '{kind}' must be <= {maximum}")
+
+        choices = definition.get("choices")
+        if isinstance(choices, list) and len(choices) > 0 and value not in choices:
+            raise ValueError(f"Option '{option_name}' for round '{kind}' must be one of {choices}")
+
+        return value
 
     def validate(self) -> None:
         if not self.key.strip():
@@ -70,7 +110,29 @@ class GameModePreset:
                 raise ValueError(f"Frequency for '{kind}' must be >= 1")
             if kind in seen_kinds:
                 raise ValueError(f"Round kind '{kind}' appears more than once")
-            normalized_options = rule.options if isinstance(rule.options, dict) else {}
+            raw_options = rule.options if isinstance(rule.options, dict) else {}
+            option_definitions = {
+                str(item.get("name")): item
+                for item in ROUND_TYPE_OPTION_DEFINITIONS.get(kind, ())
+                if isinstance(item, dict) and item.get("name")
+            }
+
+            unknown_options = sorted([name for name in raw_options if name not in option_definitions])
+            if unknown_options:
+                raise ValueError(
+                    f"Unknown option(s) for round '{kind}': {', '.join(unknown_options)}"
+                )
+
+            normalized_options: dict[str, Any] = {}
+            for option_name, raw_value in raw_options.items():
+                definition = option_definitions[option_name]
+                normalized_options[option_name] = self._normalize_option_value(
+                    kind=kind,
+                    option_name=option_name,
+                    raw_value=raw_value,
+                    definition=definition,
+                )
+
             seen_kinds.add(kind)
             normalized_rules.append(
                 RoundTypeRule(
@@ -202,40 +264,54 @@ class GameModeService:
     def resolve_stage_durations_for_round(self, preset: GameModePreset, round_kind: str) -> list[int]:
         """Resolve stage durations for a specific round kind, using per-round options when present."""
         durations = [int(value) for value in preset.stage_durations]
-        rule = self.get_round_rule(preset, round_kind)
-        if not rule or round_kind.strip().lower() != "audio":
+        normalized_kind = round_kind.strip().lower()
+        rule = self.get_round_rule(preset, normalized_kind)
+        if not rule or normalized_kind != "audio":
             return durations
 
+        option_defaults = {
+            str(item.get("name")): int(item.get("default"))
+            for item in ROUND_TYPE_OPTION_DEFINITIONS.get(normalized_kind, ())
+            if isinstance(item, dict) and str(item.get("name", "")).endswith("Duration")
+        }
         options = rule.options if isinstance(rule.options, dict) else {}
         resolved: list[int] = []
         for index in range(3):
             key = f"snippet{index + 1}Duration"
-            raw = options.get(key, durations[index] if index < len(durations) else 0)
+            fallback_default = option_defaults.get(key, durations[index] if index < len(durations) else 12)
+            raw = options.get(key, durations[index] if index < len(durations) else fallback_default)
             try:
                 value = int(raw)
             except (TypeError, ValueError):
-                value = durations[index] if index < len(durations) else 0
-            fallback = durations[index] if index < len(durations) else 12
+                value = durations[index] if index < len(durations) else fallback_default
+            fallback = durations[index] if index < len(durations) else fallback_default
             resolved.append(value if value > 0 else fallback)
         return resolved
 
     def resolve_stage_points_for_round(self, preset: GameModePreset, round_kind: str) -> list[int]:
         """Resolve stage points for a specific round kind, using per-round options when present."""
         points = [int(value) for value in preset.stage_points]
-        rule = self.get_round_rule(preset, round_kind)
-        if not rule or round_kind.strip().lower() != "audio":
+        normalized_kind = round_kind.strip().lower()
+        rule = self.get_round_rule(preset, normalized_kind)
+        if not rule or normalized_kind != "audio":
             return points
 
+        option_defaults = {
+            str(item.get("name")): int(item.get("default"))
+            for item in ROUND_TYPE_OPTION_DEFINITIONS.get(normalized_kind, ())
+            if isinstance(item, dict) and str(item.get("name", "")).endswith("Points")
+        }
         options = rule.options if isinstance(rule.options, dict) else {}
         resolved: list[int] = []
         for index in range(3):
             key = f"snippet{index + 1}Points"
-            raw = options.get(key, points[index] if index < len(points) else 0)
+            fallback_default = option_defaults.get(key, points[index] if index < len(points) else 0)
+            raw = options.get(key, points[index] if index < len(points) else fallback_default)
             try:
                 value = int(raw)
             except (TypeError, ValueError):
-                value = points[index] if index < len(points) else 0
-            fallback = points[index] if index < len(points) else 0
+                value = points[index] if index < len(points) else fallback_default
+            fallback = points[index] if index < len(points) else fallback_default
             resolved.append(value if value >= 0 else fallback)
         return resolved
 
