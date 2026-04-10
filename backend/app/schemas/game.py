@@ -97,6 +97,15 @@ class StagePlaybackState(BaseModel):
     duration_seconds: int
 
 
+class VideoPlaybackState(BaseModel):
+    mode: str
+    frame_urls: list[str] = []
+    frame_duration_ms: int | None = None
+    clip_url: str | None = None
+    clip_start_seconds: int | None = None
+    clip_duration_seconds: int | None = None
+
+
 class RoundState(BaseModel):
     round_kind: str
     song_number: int
@@ -110,6 +119,7 @@ class RoundState(BaseModel):
     track_duration_seconds: int
     snippet_start_offsets: list[int]
     stage_playback: StagePlaybackState
+    video_playback: VideoPlaybackState | None = None
     can_guess: bool
     status: str
     playback_token: int = 0

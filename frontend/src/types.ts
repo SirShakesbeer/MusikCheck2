@@ -53,6 +53,14 @@ export type RoundState = {
     start_at_seconds: number;
     duration_seconds: number;
   };
+  video_playback?: {
+    mode: 'single_frame' | 'frame_loop' | 'video_clip' | string;
+    frame_urls: string[];
+    frame_duration_ms?: number | null;
+    clip_url?: string | null;
+    clip_start_seconds?: number | null;
+    clip_duration_seconds?: number | null;
+  } | null;
   can_guess: boolean;
   status: string;
   playback_token: number;

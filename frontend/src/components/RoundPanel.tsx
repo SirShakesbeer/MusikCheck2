@@ -33,10 +33,7 @@ export function RoundPanel({
     if (!round) {
       return { disabled: targetStage !== 0, label: `Snippet ${targetStage + 1}` };
     }
-    if (targetStage === round.stage_index) {
-      return { disabled: false, label: `Replay Snippet ${targetStage + 1}` };
-    }
-    return { disabled: false, label: `Play Snippet ${targetStage + 1}` };
+    return { disabled: false, label: `Snippet ${targetStage + 1}` };
   };
 
   return (

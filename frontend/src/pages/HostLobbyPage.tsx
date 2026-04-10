@@ -4,12 +4,115 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { RoundPanel } from '../components/RoundPanel';
 import { Scoreboard } from '../components/Scoreboard';
 import { Button, Card, StatusChip } from '../components/ui';
-import { DEFAULT_SCOREBOARD_MAX_POINTS } from '../config/defaults';
+import { DEFAULT_SCOREBOARD_MAX_POINTS, VIDEO_SNIPPET2_FRAME_DURATION_MS } from '../config/defaults';
 import { api } from '../services/api';
 import { RoundPlaybackDispatcher } from '../services/playbackDispatcher';
 import { connectLobbySocket } from '../services/ws';
 import { useHostSetupStore } from '../stores/hostSetupStore';
-import type { FinishGameStatsState, GameState, RoundTeamState } from '../types';
+import type { FinishGameStatsState, GameState, RoundState, RoundTeamState } from '../types';
+
+
+function HostVideoStagePreview({ round }: { round: RoundState | null }) {
+  const [frameIndex, setFrameIndex] = useState(0);
+  const [clipVisible, setClipVisible] = useState(true);
+  const videoPlayback = round?.video_playback ?? null;
+
+  useEffect(() => {
+    setFrameIndex(0);
+    setClipVisible(true);
+  }, [round?.playback_token, round?.stage_index, videoPlayback?.mode]);
+
+  useEffect(() => {
+    if (!round || round.status !== 'playing') {
+      return;
+    }
+    if (round.round_kind !== 'video') {
+      return;
+    }
+    if (!videoPlayback || videoPlayback.mode !== 'frame_loop') {
+      return;
+    }
+    const frames = videoPlayback.frame_urls ?? [];
+    if (frames.length < 2) {
+      return;
+    }
+
+    const durationMs = Math.max(250, videoPlayback.frame_duration_ms ?? VIDEO_SNIPPET2_FRAME_DURATION_MS);
+    const timer = window.setInterval(() => {
+      setFrameIndex((current) => (current + 1) % frames.length);
+    }, durationMs);
+
+    return () => {
+      window.clearInterval(timer);
+    };
+  }, [round, videoPlayback]);
+
+  useEffect(() => {
+    if (!round || round.status !== 'playing') {
+      return;
+    }
+    if (round.round_kind !== 'video') {
+      return;
+    }
+    if (!videoPlayback || videoPlayback.mode !== 'video_clip') {
+      return;
+    }
+
+    const clipDuration = Math.max(1, videoPlayback.clip_duration_seconds ?? round.stage_playback.duration_seconds);
+    const timer = window.setTimeout(() => {
+      setClipVisible(false);
+    }, clipDuration * 1000);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [round, videoPlayback]);
+
+  if (!round || round.round_kind !== 'video' || !videoPlayback) {
+    return null;
+  }
+
+  if (videoPlayback.mode === 'video_clip' && videoPlayback.clip_url && clipVisible) {
+    return (
+      <Card title="Video Snippet">
+        <div className="overflow-hidden rounded-xl border border-white/10 bg-black/50">
+          <iframe
+            key={`${round.playback_token}-${round.stage_index}`}
+            src={videoPlayback.clip_url}
+            title="Video snippet clip"
+            className="aspect-video w-full"
+            allow="autoplay; encrypted-media; picture-in-picture"
+            allowFullScreen
+          />
+        </div>
+      </Card>
+    );
+  }
+
+  const frames = videoPlayback.frame_urls ?? [];
+  const activeFrame = frames[frameIndex] ?? frames[0];
+  if (!activeFrame) {
+    return null;
+  }
+
+  return (
+    <Card title="Video Snippet">
+      <div className="overflow-hidden rounded-xl border border-white/10 bg-black/50">
+        <img
+          key={`${round.playback_token}-${round.stage_index}-${frameIndex}`}
+          src={activeFrame}
+          alt="Round video frame"
+          className="aspect-video w-full object-cover"
+        />
+      </div>
+      {videoPlayback.mode === 'frame_loop' && (
+        <p className="muted-copy mt-2">
+          Looping {frames.length} frames every {videoPlayback.frame_duration_ms ?? VIDEO_SNIPPET2_FRAME_DURATION_MS} ms.
+        </p>
+      )}
+    </Card>
+  );
+}
 
 export function HostLobbyPage() {
   const { code = '' } = useParams();
@@ -89,6 +192,7 @@ export function HostLobbyPage() {
     }
 
     if (round.status !== 'playing') {
+      lastPlaybackTokenRef.current = 0;
       stopAllPlayback();
       return;
     }
@@ -133,6 +237,12 @@ export function HostLobbyPage() {
         }
         await api.startRound(code);
         const result = await api.playRoundStage(code, 0);
+        if (result.data.current_round?.status === 'playing') {
+          lastPlaybackTokenRef.current = result.data.current_round.playback_token;
+          void playbackDispatcher.playRound(result.data.current_round).catch((err: unknown) => {
+            setError(err instanceof Error ? err.message : String(err));
+          });
+        }
         setState(result.data);
         setError(null);
         return;
@@ -143,6 +253,12 @@ export function HostLobbyPage() {
       }
 
       const result = await api.playRoundStage(code, targetStageIndex);
+      if (result.data.current_round?.status === 'playing') {
+        lastPlaybackTokenRef.current = result.data.current_round.playback_token;
+        void playbackDispatcher.playRound(result.data.current_round).catch((err: unknown) => {
+          setError(err instanceof Error ? err.message : String(err));
+        });
+      }
       setState(result.data);
       setError(null);
     } catch (err) {
@@ -323,6 +439,8 @@ export function HostLobbyPage() {
       )}
 
       {state?.message && <StatusChip>{state.message}</StatusChip>}
+
+      <HostVideoStagePreview round={state?.current_round ?? null} />
 
       <RoundPanel
         round={state?.current_round ?? null}

@@ -76,7 +76,7 @@ class MediaProcessingService:
         if random_start:
             random_offset_seed = int(cache_key, 16)
             start = random_offset_seed % 90
-        else:
-            start = 0
+            return f"https://www.youtube-nocookie.com/embed/{video_id}?autoplay=1&start={start}"
 
-        return f"https://www.youtube.com/embed/{video_id}?autoplay=1&start={start}"
+        # Keep base embed URL without explicit start so stage-specific offsets can be applied by playback state.
+        return f"https://www.youtube-nocookie.com/embed/{video_id}?autoplay=1"

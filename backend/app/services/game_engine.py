@@ -1,4 +1,5 @@
 import json
+import hashlib
 import random
 import string
 from datetime import datetime, timedelta
@@ -6,6 +7,7 @@ from sqlalchemy import and_, func
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.core.defaults import VIDEO_SNIPPET2_FRAME_DURATION_MS
 from app.domain.models import (
     ActiveRoundState,
     ActiveRoundTeamState,
@@ -66,6 +68,18 @@ class GameEngine:
             "filters": mode.filters,
         }
         return json.dumps(config_dict)
+
+    def _resolve_stage_durations_for_round(self, mode: GameModePreset, round_kind: str) -> list[int]:
+        resolver = getattr(self.mode_service, "resolve_stage_durations_for_round", None)
+        if callable(resolver):
+            return resolver(mode, round_kind)
+        return [int(value) for value in mode.stage_durations]
+
+    def _resolve_stage_points_for_round(self, mode: GameModePreset, round_kind: str) -> list[int]:
+        resolver = getattr(self.mode_service, "resolve_stage_points_for_round", None)
+        if callable(resolver):
+            return resolver(mode, round_kind)
+        return [int(value) for value in mode.stage_points]
 
     def _deserialize_mode(self, mode_json: str | None, preset_key: str) -> GameModePreset | None:
         """Deserialize a JSON mode config and reconstruct the GameModePreset."""
@@ -504,6 +518,92 @@ class GameEngine:
     def _serialize_offsets(self, offsets: list[int]) -> str:
         return ",".join(str(max(0, int(value))) for value in offsets)
 
+    def _stable_int(self, raw_value: str) -> int:
+        digest = hashlib.sha256(raw_value.encode("utf-8")).hexdigest()
+        return int(digest[:12], 16)
+
+    def _resolve_video_playback_state(
+        self,
+        mode: GameModePreset,
+        runtime: ActiveRoundState,
+        stage_duration: int,
+        start_at_seconds: int,
+    ) -> dict | None:
+        if runtime.round_kind != "video":
+            return None
+        if runtime.playback_provider != "youtube_playlist":
+            return None
+
+        video_id = (runtime.playback_ref or "").strip()
+        if not video_id:
+            return None
+
+        track_duration = max(1, int(runtime.track_duration_seconds or 1))
+        stage_index = max(0, int(runtime.stage_index))
+        round_rule_lookup = getattr(self.mode_service, "get_round_rule", None)
+        if callable(round_rule_lookup):
+            round_rule = round_rule_lookup(mode, "video")
+        else:
+            round_rule = next((rule for rule in mode.round_rules if str(rule.kind).strip().lower() == "video"), None)
+        options = round_rule.options if round_rule and isinstance(round_rule.options, dict) else {}
+        thumbnail_variants = ["0.jpg", "1.jpg", "2.jpg", "3.jpg"]
+
+        if stage_index == 0:
+            variant_index = self._stable_int(f"{video_id}:{runtime.song_number}:s1") % len(thumbnail_variants)
+            frame_url = f"https://i.ytimg.com/vi/{video_id}/{thumbnail_variants[variant_index]}"
+            return {
+                "mode": "single_frame",
+                "frame_urls": [frame_url],
+                "frame_duration_ms": None,
+                "clip_url": None,
+                "clip_start_seconds": None,
+                "clip_duration_seconds": None,
+            }
+
+        if stage_index == 1:
+            try:
+                frame_count = int(options.get("snippet2FrameCount", 4))
+            except (TypeError, ValueError):
+                frame_count = 4
+            frame_count = max(2, min(12, frame_count))
+
+            ordered_variants = sorted(
+                thumbnail_variants,
+                key=lambda variant: self._stable_int(f"{video_id}:{runtime.song_number}:s2:{variant}"),
+            )
+            selected = ordered_variants[: min(frame_count, len(ordered_variants))]
+            if len(selected) < frame_count:
+                remainder = frame_count - len(selected)
+                selected.extend(ordered_variants[:remainder])
+
+            frame_urls = [f"https://i.ytimg.com/vi/{video_id}/{variant}" for variant in selected]
+
+            return {
+                "mode": "frame_loop",
+                "frame_urls": frame_urls,
+                "frame_duration_ms": VIDEO_SNIPPET2_FRAME_DURATION_MS,
+                "clip_url": None,
+                "clip_start_seconds": None,
+                "clip_duration_seconds": None,
+            }
+
+        clip_duration = max(1, int(stage_duration))
+        max_start = max(0, track_duration - clip_duration)
+        clip_start = max(0, min(int(start_at_seconds), max_start))
+        clip_end = clip_start + clip_duration
+        clip_url = (
+            f"https://www.youtube-nocookie.com/embed/{video_id}"
+            f"?autoplay=1&start={clip_start}&end={clip_end}&controls=0&rel=0&modestbranding=1&iv_load_policy=3&fs=0&disablekb=1"
+        )
+        return {
+            "mode": "video_clip",
+            "frame_urls": [],
+            "frame_duration_ms": None,
+            "clip_url": clip_url,
+            "clip_start_seconds": clip_start,
+            "clip_duration_seconds": clip_duration,
+        }
+
     def _deserialize_offsets(self, raw: str | None, expected_count: int) -> list[int]:
         if not raw:
             return [0 for _ in range(max(1, expected_count))]
@@ -576,7 +676,7 @@ class GameEngine:
         song_number = runtime_state.song_number + 1
         runtime_state.song_number = song_number
         round_kind = self.mode_service.pick_round_kind(mode, song_number)
-        round_stage_durations = self.mode_service.resolve_stage_durations_for_round(mode, round_kind)
+        round_stage_durations = self._resolve_stage_durations_for_round(mode, round_kind)
 
         selection = self._pick_round_media_selection(db, lobby.id, mode, round_kind)
         media_item = selection["media_item"]
@@ -637,7 +737,7 @@ class GameEngine:
         if round_state.status == "finished":
             raise ValueError("Round is finished")
 
-        stage_durations = self.mode_service.resolve_stage_durations_for_round(mode, round_state.round_kind)
+        stage_durations = self._resolve_stage_durations_for_round(mode, round_state.round_kind)
         if stage_index < 0 or stage_index >= len(stage_durations):
             raise ValueError("Requested stage is out of range")
 
@@ -915,7 +1015,7 @@ class GameEngine:
             if not team:
                 raise ValueError("Team not found")
             max_stage_reached = int(round_state.max_stage_reached or round_state.stage_index)
-            stage_points = self.mode_service.resolve_stage_points_for_round(mode, round_state.round_kind)
+            stage_points = self._resolve_stage_points_for_round(mode, round_state.round_kind)
             points_stage = max(0, min(len(stage_points) - 1, max_stage_reached))
             points = stage_points[points_stage]
             team.score += points
@@ -931,7 +1031,7 @@ class GameEngine:
         if not round_state:
             raise ValueError("No active round")
 
-        stage_durations = self.mode_service.resolve_stage_durations_for_round(mode, round_state.round_kind)
+        stage_durations = self._resolve_stage_durations_for_round(mode, round_state.round_kind)
         next_index = round_state.stage_index + 1
         if next_index >= len(stage_durations):
             round_state.status = "finished"
@@ -956,7 +1056,7 @@ class GameEngine:
 
         mode = self._get_lobby_mode(lobby, db)
         max_stage_reached = int(round_state.max_stage_reached or round_state.stage_index)
-        stage_points = self.mode_service.resolve_stage_points_for_round(mode, round_state.round_kind)
+        stage_points = self._resolve_stage_points_for_round(mode, round_state.round_kind)
         points_stage = max(0, min(len(stage_points) - 1, max_stage_reached))
         fact_points = stage_points[points_stage]
         both_bonus = max(0, int(mode.bonus_points_both))
@@ -1055,8 +1155,8 @@ class GameEngine:
         current_round = None
         round_team_states: list[RoundTeamState] = []
         if runtime:
-            stage_durations = self.mode_service.resolve_stage_durations_for_round(mode, runtime.round_kind)
-            stage_points = self.mode_service.resolve_stage_points_for_round(mode, runtime.round_kind)
+            stage_durations = self._resolve_stage_durations_for_round(mode, runtime.round_kind)
+            stage_points = self._resolve_stage_points_for_round(mode, runtime.round_kind)
             snippet_offsets = self._deserialize_offsets(runtime.snippet_start_offsets, len(stage_durations))
             stage_duration = stage_durations[runtime.stage_index]
             start_at_seconds = snippet_offsets[runtime.stage_index] if runtime.stage_index < len(snippet_offsets) else 0
@@ -1085,6 +1185,12 @@ class GameEngine:
                     "start_at_seconds": int(start_at_seconds),
                     "duration_seconds": stage_duration,
                 },
+                video_playback=self._resolve_video_playback_state(
+                    mode=mode,
+                    runtime=runtime,
+                    stage_duration=stage_duration,
+                    start_at_seconds=int(start_at_seconds),
+                ),
                 can_guess=runtime.can_guess,
                 status=runtime.status,
                 playback_token=max(0, int(runtime.playback_token or 0)),

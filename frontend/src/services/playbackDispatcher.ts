@@ -58,6 +58,10 @@ export class RoundPlaybackDispatcher {
       return;
     }
 
+    if (round.round_kind === 'video') {
+      return;
+    }
+
     if (round.playback_provider === 'spotify_playlist') {
       await this.playSpotifyRound(round);
       return;

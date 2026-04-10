@@ -17,6 +17,8 @@ DEFAULT_BONUS_POINTS_BOTH = 1
 DEFAULT_WRONG_GUESS_PENALTY = 1
 DEFAULT_REQUIRED_POINTS_TO_WIN = 42
 
+VIDEO_SNIPPET2_FRAME_DURATION_MS = 1500
+
 ROUND_TYPE_DEFINITIONS: tuple[RoundTypeDefinition, ...] = (
     RoundTypeDefinition(kind="audio", label="Audio rounds", default_every_n_songs=1),
     RoundTypeDefinition(kind="video", label="Video rounds", default_every_n_songs=4),
@@ -85,7 +87,26 @@ ROUND_TYPE_OPTION_DEFINITIONS: dict[str, tuple[dict[str, Any], ...]] = {
             "max": 20,
         },
     ),
-    "video": (),
+    "video": (
+        {
+            "name": "snippet2FrameCount",
+            "label": "Snippet 2 frame count",
+            "description": "Number of frames to loop during snippet stage 2.",
+            "type": "int",
+            "default": 4,
+            "min": 2,
+            "max": 12,
+        },
+        {
+            "name": "snippet3Duration",
+            "label": "Snippet 3 clip duration (s)",
+            "description": "Duration of the video clip played in snippet stage 3.",
+            "type": "int",
+            "default": 8,
+            "min": 1,
+            "max": 45,
+        },
+    ),
     "lyrics": (),
 }
 
