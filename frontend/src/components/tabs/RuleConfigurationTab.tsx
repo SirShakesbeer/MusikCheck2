@@ -105,6 +105,7 @@ export function RuleConfigurationTab({
               const value = isModeField
                 ? (modeFormValues[modeFieldKey] as string)
                 : (roundRule[opt.name] ?? opt.default ?? '');
+              const formValue = typeof value === 'boolean' ? '' : value;
               let inputField = null;
               if (opt.type === 'int' || opt.type === 'float') {
                 inputField = (
@@ -113,7 +114,7 @@ export function RuleConfigurationTab({
                     min={opt.min}
                     max={opt.max}
                     step={opt.type === 'float' ? 'any' : 1}
-                    value={value}
+                    value={formValue}
                     disabled={!modeDetailsEditable}
                     onChange={(event: ChangeEvent<HTMLInputElement>) => {
                       if (isModeField) {
@@ -136,7 +137,7 @@ export function RuleConfigurationTab({
               } else if (opt.type === 'str' && opt.choices && opt.choices.length > 0) {
                 inputField = (
                   <select
-                    value={value}
+                    value={formValue}
                     disabled={!modeDetailsEditable}
                     onChange={(event: ChangeEvent<HTMLSelectElement>) => onRoundRuleChange(roundType.kind, { [opt.name]: event.target.value })}
                   >
@@ -149,7 +150,7 @@ export function RuleConfigurationTab({
                 inputField = (
                   <input
                     type="text"
-                    value={value}
+                    value={formValue}
                     disabled={!modeDetailsEditable}
                     onChange={(event: ChangeEvent<HTMLInputElement>) => onRoundRuleChange(roundType.kind, { [opt.name]: event.target.value })}
                   />

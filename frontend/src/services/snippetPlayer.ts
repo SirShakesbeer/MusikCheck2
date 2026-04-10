@@ -22,8 +22,7 @@ export class HtmlAudioSnippetPlayer implements SnippetPlayer {
   async play(request: SnippetPlayRequest): Promise<void> {
     this.stop();
 
-    if (request.snippetUrl.includes('youtube.com/embed/')) {
-      const separator = request.snippetUrl.includes('?') ? '&' : '?';
+    if (request.snippetUrl.includes('/embed/')) {
       const startAt = Math.max(0, Math.floor(request.startAtSeconds ?? 0));
       const frame = document.createElement('iframe');
       frame.width = '1';
@@ -32,7 +31,11 @@ export class HtmlAudioSnippetPlayer implements SnippetPlayer {
       frame.style.left = '-10000px';
       frame.style.top = '-10000px';
       frame.allow = 'autoplay; encrypted-media';
-      frame.src = `${request.snippetUrl}${separator}start=${startAt}&autoplay=1`;
+
+      const embedUrl = new URL(request.snippetUrl);
+      embedUrl.searchParams.set('start', String(startAt));
+      embedUrl.searchParams.set('autoplay', '1');
+      frame.src = embedUrl.toString();
       document.body.appendChild(frame);
       this.youtubeFrame = frame;
 

@@ -554,6 +554,7 @@ end note
 ### gameplay
 
 - Add additional mode plugins (`music_video`, `lyrics`, `instrumental`, `speed round`, `STRÄWKCÜR`) (ffmpeg audio/video/frames extraction)
+- switch music video to use ffmpeg extraction
 - add a local database ingestion tool that can be connected in the ui
 - adjust point system to be more similar to MusikCheck (penalty points, lock artist/title guess points)
 - default german option and optional english localization

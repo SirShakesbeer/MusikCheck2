@@ -18,6 +18,7 @@ export const RELEASE_YEAR_FILTER_DEFAULTS = {
 export const DEFAULT_SCOREBOARD_MAX_POINTS = 1;
 export const DEFAULT_ROUND_STAGE_COUNT = 3;
 export const UNKNOWN_REVEAL_VALUE = 'Unknown';
+export const VIDEO_SNIPPET2_FRAME_DURATION_MS = 1500;
 
 export const MODE_FORM_DEFAULTS = {
   stageDurations: [1, 2, 3] as const,

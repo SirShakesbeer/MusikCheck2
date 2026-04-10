@@ -266,7 +266,7 @@ class GameModeService:
         durations = [int(value) for value in preset.stage_durations]
         normalized_kind = round_kind.strip().lower()
         rule = self.get_round_rule(preset, normalized_kind)
-        if not rule or normalized_kind != "audio":
+        if not rule:
             return durations
 
         option_defaults = {
@@ -275,8 +275,9 @@ class GameModeService:
             if isinstance(item, dict) and str(item.get("name", "")).endswith("Duration")
         }
         options = rule.options if isinstance(rule.options, dict) else {}
+        stage_count = max(1, len(durations))
         resolved: list[int] = []
-        for index in range(3):
+        for index in range(stage_count):
             key = f"snippet{index + 1}Duration"
             fallback_default = option_defaults.get(key, durations[index] if index < len(durations) else 12)
             raw = options.get(key, durations[index] if index < len(durations) else fallback_default)
@@ -293,7 +294,7 @@ class GameModeService:
         points = [int(value) for value in preset.stage_points]
         normalized_kind = round_kind.strip().lower()
         rule = self.get_round_rule(preset, normalized_kind)
-        if not rule or normalized_kind != "audio":
+        if not rule:
             return points
 
         option_defaults = {
@@ -301,9 +302,13 @@ class GameModeService:
             for item in ROUND_TYPE_OPTION_DEFINITIONS.get(normalized_kind, ())
             if isinstance(item, dict) and str(item.get("name", "")).endswith("Points")
         }
+        if not option_defaults:
+            return points
+
         options = rule.options if isinstance(rule.options, dict) else {}
+        stage_count = max(1, len(points))
         resolved: list[int] = []
-        for index in range(3):
+        for index in range(stage_count):
             key = f"snippet{index + 1}Points"
             fallback_default = option_defaults.get(key, points[index] if index < len(points) else 0)
             raw = options.get(key, points[index] if index < len(points) else fallback_default)

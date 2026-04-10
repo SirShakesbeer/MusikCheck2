@@ -37,3 +37,18 @@ class RoundTypeMetadataTests(unittest.TestCase):
                 required_points_to_win=10,
                 filters={},
             )
+
+    def test_round_type_metadata_exposes_video_options(self) -> None:
+        response = self.client.get('/api/round-types/metadata')
+        self.assertEqual(response.status_code, 200)
+
+        payload = response.json()
+        self.assertTrue(payload['ok'])
+        round_types = payload['data']['round_types']
+        video = next((item for item in round_types if item['kind'] == 'video'), None)
+
+        self.assertIsNotNone(video)
+        options = {item['name']: item for item in video['options']}
+        self.assertIn('snippet2FrameCount', options)
+        self.assertIn('snippet3Duration', options)
+        self.assertEqual(options['snippet2FrameCount']['default'], 4)
