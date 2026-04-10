@@ -574,6 +574,7 @@ think of a solution: create persistance of user info across sessions (user creat
 
 - security:
   - spotify connection security
+  - api calls
 - tests
 
 ### MusikCheck 1 integration
