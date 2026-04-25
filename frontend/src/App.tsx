@@ -1,16 +1,22 @@
+import { useEffect } from 'react';
 import { Navigate, Route, Routes } from 'react-router-dom';
 
-import { ThemeSwitcher } from './components/ThemeSwitcher';
 import { HostLobbyPage } from './pages/HostLobbyPage';
 import { HostSetupPage } from './pages/HostSetupPage';
 import { HomePage } from './pages/HomePage';
 import { JoinPage } from './pages/JoinPage';
 import { PlayerPage } from './pages/PlayerPage';
+import { useThemeStore } from './stores/themeStore';
 
 export default function App() {
+  const hydrateTheme = useThemeStore((store) => store.hydrateTheme);
+
+  useEffect(() => {
+    hydrateTheme();
+  }, [hydrateTheme]);
+
   return (
     <>
-      <ThemeSwitcher />
       <Routes>
         <Route path="/" element={<HomePage />} />
         <Route path="/join" element={<JoinPage />} />

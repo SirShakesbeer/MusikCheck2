@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 
 import { RoundPanel } from '../components/RoundPanel';
 import { Scoreboard } from '../components/Scoreboard';
+import { ThemeSelector } from '../components/ThemeSwitcher';
 import { Button, Card, StatusChip } from '../components/ui';
 import { DEFAULT_SCOREBOARD_MAX_POINTS, VIDEO_SNIPPET2_FRAME_DURATION_MS } from '../config/defaults';
 import { api } from '../services/api';
@@ -429,13 +430,38 @@ export function HostLobbyPage() {
       </Card>
 
       {optionsOpen && (
-        <Card title="Options" tone="panel">
-          <div className="host-actions-grid mb-1">
-            <Button onClick={connectSpotify} disabled={spotifyAuthBusy}>
-              {spotifyAuthBusy ? 'Connecting Spotify...' : (spotifyConnected ? 'Reconnect Spotify' : 'Connect Spotify')}
-            </Button>
-          </div>
-        </Card>
+        <div
+          className="options-overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Game options"
+          onClick={() => setOptionsOpen(false)}
+        >
+          <Card
+            title="Options"
+            tone="panel"
+            className="options-modal-card"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="options-section mb-3">
+              <p className="options-section-title">Style</p>
+              <ThemeSelector className="options-theme-selector" label="Theme" selectClassName="options-theme-select" />
+            </div>
+
+            <div className="options-section mb-3">
+              <p className="options-section-title">Integrations</p>
+              <div className="host-actions-grid">
+                <Button onClick={connectSpotify} disabled={spotifyAuthBusy}>
+                  {spotifyAuthBusy ? 'Connecting Spotify...' : (spotifyConnected ? 'Reconnect Spotify' : 'Connect Spotify')}
+                </Button>
+              </div>
+            </div>
+
+            <div className="host-actions-grid">
+              <Button variant="ghost" onClick={() => setOptionsOpen(false)}>Close</Button>
+            </div>
+          </Card>
+        </div>
       )}
 
       {state?.message && <StatusChip>{state.message}</StatusChip>}
