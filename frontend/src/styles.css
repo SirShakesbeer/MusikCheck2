@@ -60,6 +60,10 @@
       linear-gradient(140deg, rgb(var(--mc-ink)) 0%, color-mix(in srgb, rgb(var(--mc-night)) 80%, rgb(var(--mc-panel)) 20%) 58%, rgb(var(--mc-night)) 100%);
   }
 
+  #root {
+    @apply relative;
+  }
+
   h1,
   h2,
   h3,
@@ -102,6 +106,56 @@
 @layer components {
   .tab-header-row {
     @apply flex w-full rounded-xl overflow-hidden;
+  }
+
+  .app-background-layer {
+    @apply pointer-events-none fixed inset-0 z-0;
+  }
+
+  .app-route-layer {
+    @apply relative z-10;
+  }
+
+  .paper-card {
+    @apply relative overflow-hidden;
+    box-shadow: 0 10px 36px rgba(9, 12, 32, 0.4), 0 1px 0 rgba(255, 255, 255, 0.12) inset;
+    transform: rotate(var(--paper-tilt, -0.45deg));
+  }
+
+  .paper-card::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    opacity: 0.22;
+    background-image: repeating-linear-gradient(
+      -8deg,
+      rgba(255, 255, 255, 0.1) 0px,
+      rgba(255, 255, 255, 0.1) 2px,
+      transparent 2px,
+      transparent 6px
+    );
+  }
+
+  .paper-button {
+    @apply relative;
+    transform: rotate(var(--paper-btn-tilt, -0.35deg));
+    box-shadow: 0 7px 18px rgba(10, 12, 32, 0.22), 0 1px 0 rgba(255, 255, 255, 0.12) inset;
+  }
+
+  .paper-button-morphing {
+    animation: paperMorph var(--paper-morph-duration, 300ms) ease-in-out infinite;
+  }
+
+  .paper-button-paused,
+  .paper-button-morphing:hover,
+  .paper-button-morphing:active,
+  .paper-button-morphing:focus-visible {
+    animation-play-state: paused;
+  }
+
+  .paper-chip {
+    transform: rotate(-0.55deg);
   }
   .tab-header-btn {
     @apply flex-1 rounded-none border-0 bg-transparent text-white font-semibold text-base py-3 px-0 transition-none;
@@ -195,6 +249,75 @@
     @apply w-full sm:w-auto;
   }
 
+  .host-lobby-shell {
+    @apply m-0 flex h-[100dvh] max-w-none flex-col gap-3 overflow-hidden rounded-none border-0 bg-transparent p-3 sm:p-4;
+  }
+
+  .host-lobby-header {
+    @apply flex items-center justify-between gap-3 rounded-3xl border border-white/10 bg-mc-night/55 px-4 py-3 backdrop-blur-xl;
+  }
+
+  .host-lobby-header .page-heading {
+    @apply mb-0 text-3xl sm:text-4xl;
+  }
+
+  .host-lobby-error {
+    @apply shrink-0;
+  }
+
+  .host-lobby-controls {
+    @apply shrink-0 rounded-3xl border border-white/10 bg-black/10 p-3 backdrop-blur-sm;
+  }
+
+  .host-lobby-board {
+    @apply relative min-h-0 flex-1 overflow-hidden rounded-3xl border border-white/10 bg-black/5 p-2 sm:p-3;
+  }
+
+  .round-controls-shell {
+    @apply flex flex-col gap-2;
+  }
+
+  .round-controls-row {
+    @apply flex flex-wrap items-start gap-2;
+  }
+
+  .round-snippet-stage {
+    @apply flex-1 min-w-[320px];
+  }
+
+  .round-snippet-row {
+    @apply flex flex-wrap gap-2;
+  }
+
+  .round-static-row {
+    @apply flex flex-wrap gap-2;
+  }
+
+  .round-actions-row {
+    @apply flex flex-wrap gap-2;
+  }
+
+  .team-progress-board {
+    @apply grid h-full min-h-0 overflow-hidden;
+    grid-template-rows: repeat(var(--team-count, 1), minmax(0, 1fr));
+    row-gap: 0.45rem;
+    align-items: center;
+  }
+
+  .team-progress-lane {
+    @apply relative min-h-0;
+  }
+
+  .team-paper-card {
+    --paper-tilt: -0.6deg;
+    @apply paper-card absolute top-1/2 w-[90vw] max-w-[460px] rounded-2xl border border-white/20 bg-mc-surface/90 p-3 shadow-card;
+    animation: teamCardFloat 4.4s ease-in-out infinite;
+  }
+
+  .team-paper-card:nth-child(even) {
+    --paper-tilt: 0.85deg;
+  }
+
   .player-form-grid {
     @apply grid grid-cols-1 gap-2 sm:grid-cols-2;
   }
@@ -275,8 +398,24 @@
     @apply flex items-center justify-between gap-2 rounded-xl border border-white/10 bg-black/20 px-3 py-2;
   }
 
+  .video-round-overlay {
+    @apply fixed inset-0 z-[86] flex items-center justify-center bg-black/80 px-4 backdrop-blur-sm;
+  }
+
+  .video-round-popup {
+    @apply w-full max-w-6xl;
+  }
+
+  .video-round-frame {
+    @apply aspect-video w-full rounded-2xl border border-white/20 bg-black/85 shadow-card;
+  }
+
   .options-overlay {
-    @apply fixed inset-0 z-[72] flex items-center justify-center bg-black/70 px-4 backdrop-blur-sm;
+    @apply fixed inset-0 z-[84] flex items-center justify-center bg-black/70 px-4 backdrop-blur-sm;
+  }
+
+  .global-options-trigger {
+    @apply fixed bottom-4 right-4 z-[82] rounded-full px-4 py-2;
   }
 
   .options-modal-card {
@@ -297,5 +436,122 @@
 
   .options-theme-select {
     @apply w-full min-w-0 sm:max-w-xs;
+  }
+
+  .round-controls-stage {
+    @apply relative overflow-hidden;
+  }
+
+  .round-controls-grid {
+    @apply grid grid-cols-1 gap-2;
+  }
+
+  .round-controls-grid.round-controls-entering {
+    animation: roundControlsSlideIn var(--round-slide-in-duration, 320ms) ease-out both;
+  }
+
+  .round-controls-grid.round-controls-exiting {
+    animation: roundControlsCrumple var(--round-crumple-duration, 280ms) ease-in both;
+  }
+
+  .round-controls-grid.round-controls-falling {
+    animation: roundControlsFall var(--round-fall-duration, 220ms) ease-in forwards;
+  }
+
+  .round-controls-grid .paper-button {
+    transition: transform 160ms ease, filter 160ms ease;
+  }
+
+  @keyframes paperMorph {
+    0% {
+      transform: rotate(var(--paper-btn-tilt, -0.35deg)) scale(var(--paper-morph-scale-min, 0.97)) skewX(calc(var(--paper-morph-skew, 1.1deg) * -1)) skewY(var(--paper-morph-skew, 1.1deg));
+      border-radius: 1rem 0.9rem 1.15rem 0.85rem;
+    }
+    25% {
+      transform: rotate(calc(var(--paper-btn-tilt, -0.35deg) + var(--paper-morph-rotate, 1.2deg))) scale(1) skewX(0deg) skewY(calc(var(--paper-morph-skew, 1.1deg) * -0.5));
+      border-radius: 0.95rem 1.1rem 0.85rem 1rem;
+    }
+    50% {
+      transform: rotate(calc(var(--paper-btn-tilt, -0.35deg) * -1)) scale(var(--paper-morph-scale-max, 1.03)) skewX(var(--paper-morph-skew, 1.1deg)) skewY(0deg);
+      border-radius: 1.1rem 0.8rem 1rem 1.05rem;
+    }
+    75% {
+      transform: rotate(calc(var(--paper-btn-tilt, -0.35deg) + 0.15deg)) scale(1) skewX(calc(var(--paper-morph-skew, 1.1deg) * -0.35)) skewY(calc(var(--paper-morph-skew, 1.1deg) * 0.35));
+      border-radius: 0.9rem 1rem 1.1rem 0.95rem;
+    }
+    100% {
+      transform: rotate(var(--paper-btn-tilt, -0.35deg)) scale(var(--paper-morph-scale-min, 0.97)) skewX(calc(var(--paper-morph-skew, 1.1deg) * -1)) skewY(var(--paper-morph-skew, 1.1deg));
+      border-radius: 1rem 0.9rem 1.15rem 0.85rem;
+    }
+  }
+
+  @keyframes roundControlsSlideIn {
+    from {
+      opacity: 0;
+      transform: translateY(-24px) scale(0.98);
+      filter: blur(2px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+      filter: blur(0);
+    }
+  }
+
+  @keyframes roundControlsCrumple {
+    0% {
+      opacity: 1;
+      transform: translateY(0) rotate(0deg) scale(1);
+      filter: blur(0);
+    }
+    45% {
+      opacity: 0.85;
+      transform: translateY(8px) rotate(-5deg) scale(0.94);
+    }
+    100% {
+      opacity: 0;
+      transform: translateY(44px) rotate(10deg) scale(0.82);
+      filter: blur(1.4px);
+    }
+  }
+
+  @keyframes roundControlsFall {
+    from {
+      opacity: 1;
+      transform: translateY(0) rotate(0deg) scale(1);
+    }
+    to {
+      opacity: 0;
+      transform: translateY(86px) rotate(12deg) scale(0.76);
+    }
+  }
+
+  @keyframes teamCardFloat {
+    0% {
+      transform: translate(-50%, -50%) translateY(0) rotate(var(--paper-tilt, -0.6deg)) scale(var(--team-card-scale, 1));
+    }
+    50% {
+      transform: translate(-50%, -50%) translateY(-5px) rotate(calc(var(--paper-tilt, -0.6deg) + 0.35deg)) scale(var(--team-card-scale, 1));
+    }
+    100% {
+      transform: translate(-50%, -50%) translateY(0) rotate(var(--paper-tilt, -0.6deg)) scale(var(--team-card-scale, 1));
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .team-paper-card {
+      animation: none;
+    }
+
+    .paper-card,
+    .paper-button,
+    .paper-chip,
+    .paper-button-morphing,
+    .round-controls-grid,
+    .round-controls-shell,
+    .round-snippet-row {
+      transform: none;
+      animation: none;
+    }
   }
 }

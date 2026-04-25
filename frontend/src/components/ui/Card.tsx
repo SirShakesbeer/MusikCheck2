@@ -10,8 +10,8 @@ type Props = HTMLAttributes<HTMLElement> & {
 };
 
 const TONE_CLASS: Record<CardTone, string> = {
-  default: 'rounded-2xl border border-white/10 bg-mc-surface/80 p-4 shadow-glow',
-  panel: 'rounded-2xl border border-white/15 bg-mc-panel/70 p-4 shadow-glow',
+  default: 'paper-card rounded-2xl border border-white/10 bg-mc-surface/80 p-4 shadow-glow',
+  panel: 'paper-card rounded-2xl border border-white/15 bg-mc-panel/70 p-4 shadow-glow',
 };
 
 function joinClasses(...classes: Array<string | undefined>) {

@@ -2,139 +2,31 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 
 import { RoundPanel } from '../components/RoundPanel';
-import { Scoreboard } from '../components/Scoreboard';
-import { ThemeSelector } from '../components/ThemeSwitcher';
+import { TeamProgressBoard } from '../components/TeamProgressBoard';
 import { Button, Card, StatusChip } from '../components/ui';
-import { DEFAULT_SCOREBOARD_MAX_POINTS, VIDEO_SNIPPET2_FRAME_DURATION_MS } from '../config/defaults';
+import { DEFAULT_SCOREBOARD_MAX_POINTS } from '../config/defaults';
 import { api } from '../services/api';
 import { RoundPlaybackDispatcher } from '../services/playbackDispatcher';
 import { connectLobbySocket } from '../services/ws';
 import { useHostSetupStore } from '../stores/hostSetupStore';
 import type { FinishGameStatsState, GameState, RoundState, RoundTeamState } from '../types';
 
-
-function HostVideoStagePreview({ round }: { round: RoundState | null }) {
-  const [frameIndex, setFrameIndex] = useState(0);
-  const [clipVisible, setClipVisible] = useState(true);
-  const videoPlayback = round?.video_playback ?? null;
-
-  useEffect(() => {
-    setFrameIndex(0);
-    setClipVisible(true);
-  }, [round?.playback_token, round?.stage_index, videoPlayback?.mode]);
-
-  useEffect(() => {
-    if (!round || round.status !== 'playing') {
-      return;
-    }
-    if (round.round_kind !== 'video') {
-      return;
-    }
-    if (!videoPlayback || videoPlayback.mode !== 'frame_loop') {
-      return;
-    }
-    const frames = videoPlayback.frame_urls ?? [];
-    if (frames.length < 2) {
-      return;
-    }
-
-    const durationMs = Math.max(250, videoPlayback.frame_duration_ms ?? VIDEO_SNIPPET2_FRAME_DURATION_MS);
-    const timer = window.setInterval(() => {
-      setFrameIndex((current) => (current + 1) % frames.length);
-    }, durationMs);
-
-    return () => {
-      window.clearInterval(timer);
-    };
-  }, [round, videoPlayback]);
-
-  useEffect(() => {
-    if (!round || round.status !== 'playing') {
-      return;
-    }
-    if (round.round_kind !== 'video') {
-      return;
-    }
-    if (!videoPlayback || videoPlayback.mode !== 'video_clip') {
-      return;
-    }
-
-    const clipDuration = Math.max(1, videoPlayback.clip_duration_seconds ?? round.stage_playback.duration_seconds);
-    const timer = window.setTimeout(() => {
-      setClipVisible(false);
-    }, clipDuration * 1000);
-
-    return () => {
-      window.clearTimeout(timer);
-    };
-  }, [round, videoPlayback]);
-
-  if (!round || round.round_kind !== 'video' || !videoPlayback) {
-    return null;
-  }
-
-  if (videoPlayback.mode === 'video_clip' && videoPlayback.clip_url && clipVisible) {
-    return (
-      <Card title="Video Snippet">
-        <div className="overflow-hidden rounded-xl border border-white/10 bg-black/50">
-          <iframe
-            key={`${round.playback_token}-${round.stage_index}`}
-            src={videoPlayback.clip_url}
-            title="Video snippet clip"
-            className="aspect-video w-full"
-            allow="autoplay; encrypted-media; picture-in-picture"
-            allowFullScreen
-          />
-        </div>
-      </Card>
-    );
-  }
-
-  const frames = videoPlayback.frame_urls ?? [];
-  const activeFrame = frames[frameIndex] ?? frames[0];
-  if (!activeFrame) {
-    return null;
-  }
-
-  return (
-    <Card title="Video Snippet">
-      <div className="overflow-hidden rounded-xl border border-white/10 bg-black/50">
-        <img
-          key={`${round.playback_token}-${round.stage_index}-${frameIndex}`}
-          src={activeFrame}
-          alt="Round video frame"
-          className="aspect-video w-full object-cover"
-        />
-      </div>
-      {videoPlayback.mode === 'frame_loop' && (
-        <p className="muted-copy mt-2">
-          Looping {frames.length} frames every {videoPlayback.frame_duration_ms ?? VIDEO_SNIPPET2_FRAME_DURATION_MS} ms.
-        </p>
-      )}
-    </Card>
-  );
-}
-
 export function HostLobbyPage() {
   const { code = '' } = useParams();
   const navigate = useNavigate();
   const { resetSetup } = useHostSetupStore();
-  const playbackDispatcher = useMemo(
-    () => new RoundPlaybackDispatcher((deviceId) => setSpotifyDeviceId(deviceId)),
-    [],
-  );
+  const playbackDispatcher = useMemo(() => new RoundPlaybackDispatcher(() => {}), []);
 
   const [state, setState] = useState<GameState | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [sessionExpired, setSessionExpired] = useState<boolean>(false);
-  const [spotifyConnected, setSpotifyConnected] = useState<boolean>(false);
-  const [spotifyAuthBusy, setSpotifyAuthBusy] = useState<boolean>(false);
-  const [optionsOpen, setOptionsOpen] = useState<boolean>(false);
-  const [spotifyDeviceId, setSpotifyDeviceId] = useState<string | null>(null);
   const [finishGameOpen, setFinishGameOpen] = useState<boolean>(false);
   const [finishGameLoading, setFinishGameLoading] = useState<boolean>(false);
   const [resettingForNewGame, setResettingForNewGame] = useState<boolean>(false);
   const [finishGameStats, setFinishGameStats] = useState<FinishGameStatsState | null>(null);
+  const [videoPreviewOpen, setVideoPreviewOpen] = useState<boolean>(false);
+  const [videoPreviewRound, setVideoPreviewRound] = useState<RoundState | null>(null);
+  const [videoPreviewStageIndex, setVideoPreviewStageIndex] = useState<number>(0);
   const lastPlaybackTokenRef = useRef<number>(0);
 
   const applyUiError = (err: unknown) => {
@@ -166,18 +58,6 @@ export function HostLobbyPage() {
 
     void load();
   }, [code]);
-
-  useEffect(() => {
-    const loadSpotifyStatus = async () => {
-      try {
-        const status = await api.getSpotifyStatus();
-        setSpotifyConnected(Boolean(status.data.connected));
-      } catch {
-      }
-    };
-
-    void loadSpotifyStatus();
-  }, []);
 
   useEffect(() => {
     if (!code) return;
@@ -244,6 +124,13 @@ export function HostLobbyPage() {
             setError(err instanceof Error ? err.message : String(err));
           });
         }
+
+        if (result.data.current_round?.round_kind === 'video' && result.data.current_round.video_playback) {
+          setVideoPreviewRound(result.data.current_round);
+          setVideoPreviewStageIndex(targetStageIndex);
+          setVideoPreviewOpen(true);
+        }
+
         setState(result.data);
         setError(null);
         return;
@@ -260,6 +147,13 @@ export function HostLobbyPage() {
           setError(err instanceof Error ? err.message : String(err));
         });
       }
+
+      if (result.data.current_round?.round_kind === 'video' && result.data.current_round.video_playback) {
+        setVideoPreviewRound(result.data.current_round);
+        setVideoPreviewStageIndex(targetStageIndex);
+        setVideoPreviewOpen(true);
+      }
+
       setState(result.data);
       setError(null);
     } catch (err) {
@@ -284,6 +178,8 @@ export function HostLobbyPage() {
   const onNextRound = async () => {
     try {
       const result = await api.nextRound(code);
+      setVideoPreviewOpen(false);
+      setVideoPreviewRound(null);
       setState(result.data);
       setError(null);
     } catch (err) {
@@ -350,201 +246,66 @@ export function HostLobbyPage() {
 
   if (sessionExpired) {
     return (
-      <main>
-        <Card>
+      <main className="host-lobby-shell">
+        <header className="host-lobby-header paper-card">
           <h1 className="page-heading">Session Expired</h1>
           <p className="danger-text">{error || 'This lobby is no longer available.'}</p>
           <div className="source-row mt-3">
-            <Button onClick={() => navigate('/')}>Go To Home</Button>
+            <Button onClick={() => navigate('/')}>Exit</Button>
           </div>
-        </Card>
+        </header>
       </main>
     );
   }
 
   const hasWinnerLock = Boolean(state?.has_winner_lock);
   const winnerTeamIds = new Set(state?.winner_team_ids ?? []);
-
-  const connectSpotify = async () => {
-    setSpotifyAuthBusy(true);
-    try {
-      const auth = await api.getSpotifyAuthUrl();
-      const popup = window.open(auth.data.auth_url, 'spotify-oauth', 'width=520,height=720,resizable=yes');
-      if (!popup) {
-        throw new Error('Popup was blocked. Please allow popups for Spotify login.');
-      }
-
-      const startedAt = Date.now();
-      const intervalId = window.setInterval(async () => {
-        const elapsedMs = Date.now() - startedAt;
-        if (elapsedMs > 120000) {
-          window.clearInterval(intervalId);
-          setSpotifyAuthBusy(false);
-          return;
-        }
-
-        try {
-          const status = await api.getSpotifyStatus();
-          if (status.data.connected) {
-            setSpotifyConnected(true);
-            await api.setLobbySpotifyConnection(code, true);
-            setSpotifyAuthBusy(false);
-            window.clearInterval(intervalId);
-            if (!popup.closed) {
-              popup.close();
-            }
-          }
-        } catch {
-        }
-      }, 1500);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-      setSpotifyAuthBusy(false);
-    }
-  };
+  const previewPlayback = videoPreviewRound?.video_playback ?? null;
+  const previewFrameList = previewPlayback?.frame_urls ?? [];
+  const previewFrameIndex = Math.max(0, Math.min(videoPreviewStageIndex, Math.max(0, previewFrameList.length - 1)));
+  const previewFrame = previewFrameList[previewFrameIndex] ?? previewFrameList[0] ?? null;
 
   return (
-    <main>
-      <Card>
-        <StatusChip>Live Lobby</StatusChip>
-        <h1 className="page-heading mt-2">MusikCheck2 Lobby</h1>
-        <p className="page-subheading">Lobby: {code}</p>
-        <div className="source-row-mobile mb-2">
-          <StatusChip tone={spotifyConnected ? 'ok' : 'warn'}>Spotify {spotifyConnected ? 'Connected' : 'Not Connected'}</StatusChip>
-          {spotifyDeviceId && <StatusChip>Device {spotifyDeviceId}</StatusChip>}
-        </div>
-
-        <div className="host-actions-grid">
-          <Button onClick={() => setOptionsOpen((current) => !current)} variant="ghost">
-            Options
-          </Button>
-          <Button
-            onClick={() => {
-              resetSetup();
-              navigate(`/host/setup/${code}`);
-            }}
-          >
-            Back To Setup
-          </Button>
-        </div>
-      </Card>
-
-      {optionsOpen && (
-        <div
-          className="options-overlay"
-          role="dialog"
-          aria-modal="true"
-          aria-label="Game options"
-          onClick={() => setOptionsOpen(false)}
+    <main className="host-lobby-shell">
+      <header className="host-lobby-header paper-card">
+        <h1 className="page-heading">MusikCheck 2</h1>
+        <Button
+          variant="ghost"
+          onClick={() => {
+            resetSetup();
+            navigate('/');
+          }}
         >
-          <Card
-            title="Options"
-            tone="panel"
-            className="options-modal-card"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <div className="options-section mb-3">
-              <p className="options-section-title">Style</p>
-              <ThemeSelector className="options-theme-selector" label="Theme" selectClassName="options-theme-select" />
-            </div>
+          Exit
+        </Button>
+      </header>
 
-            <div className="options-section mb-3">
-              <p className="options-section-title">Integrations</p>
-              <div className="host-actions-grid">
-                <Button onClick={connectSpotify} disabled={spotifyAuthBusy}>
-                  {spotifyAuthBusy ? 'Connecting Spotify...' : (spotifyConnected ? 'Reconnect Spotify' : 'Connect Spotify')}
-                </Button>
-              </div>
-            </div>
+      {error && <p className="danger-text host-lobby-error">{error}</p>}
 
-            <div className="host-actions-grid">
-              <Button variant="ghost" onClick={() => setOptionsOpen(false)}>Close</Button>
-            </div>
-          </Card>
-        </div>
-      )}
+      <div className="host-lobby-controls">
+        <RoundPanel
+          round={state?.current_round ?? null}
+          onStart={onStartRound}
+          onPlaySnippet={onPlaySnippet}
+          onNextRound={onNextRound}
+          onRevealRound={onRevealRound}
+          onFinishGame={() => void onFinishGame()}
+          hasWinnerLock={hasWinnerLock}
+          finishGameLoading={finishGameLoading}
+        />
+      </div>
 
-      {state?.message && <StatusChip>{state.message}</StatusChip>}
-
-      <HostVideoStagePreview round={state?.current_round ?? null} />
-
-      <RoundPanel
-        round={state?.current_round ?? null}
-        onStart={onStartRound}
-        onPlaySnippet={onPlaySnippet}
-        onNextRound={onNextRound}
-        onRevealRound={onRevealRound}
-        onFinishGame={() => void onFinishGame()}
-        hasWinnerLock={hasWinnerLock}
-        finishGameLoading={finishGameLoading}
-      />
-
-      <Card title="Teams">
-        {state?.teams?.length ? (
-          <div className="source-list">
-            {state.teams.map((team) => {
-              const roundState = teamRoundGuessState[team.id];
-              const artistSelected = (roundState?.artist_points ?? 0) > 0;
-              const titleSelected = (roundState?.title_points ?? 0) > 0;
-              const disableArtistToggle = hasWinnerLock && !artistSelected;
-              const disableTitleToggle = hasWinnerLock && !titleSelected;
-              return (
-                <div key={team.id} className="rounded-xl border border-white/10 bg-black/20 p-3">
-                  <div className="mb-2 flex items-center justify-between gap-2">
-                    <strong className="text-lg">{team.name}</strong>
-                    <div className="flex flex-wrap items-center justify-end gap-2">
-                      <StatusChip>Score: {team.score}</StatusChip>
-                      {winnerTeamIds.has(team.id) && <StatusChip tone="ok">Max Reached</StatusChip>}
-                    </div>
-                  </div>
-                  {roundState && (
-                    <p className="muted-copy mb-2">
-                      Artist {roundState.artist_points} / Title {roundState.title_points} / Bonus {roundState.bonus_points}
-                    </p>
-                  )}
-                  <div className="host-actions-grid">
-                    <Button
-                      onClick={() => onToggleFact(team.id, 'artist')}
-                      disabled={disableArtistToggle}
-                      variant="ghost"
-                      size="sm"
-                    >
-                      Toggle Artist
-                    </Button>
-                    <Button
-                      onClick={() => onToggleFact(team.id, 'title')}
-                      disabled={disableTitleToggle}
-                      variant="ghost"
-                      size="sm"
-                    >
-                      Toggle Title
-                    </Button>
-                    <Button onClick={() => onPenalty(team.id)} variant="danger" size="sm">Wrong Guess Penalty</Button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        ) : (
-          <p>No teams available yet.</p>
-        )}
-      </Card>
-
-      <Card title="Players">
-        {state?.players?.length ? (
-          <ul className="space-y-2 pl-0">
-            {state.players.map((player) => (
-              <li key={player.id} className="list-none rounded-xl border border-white/10 bg-black/20 px-3 py-2">
-                {player.name} ({player.ready ? 'ready' : 'not ready'})
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p>No connected players yet.</p>
-        )}
-      </Card>
-
-      <Scoreboard teams={state?.teams ?? []} maxPoints={state?.mode?.required_points_to_win ?? DEFAULT_SCOREBOARD_MAX_POINTS} />
+      <section className="host-lobby-board">
+        <TeamProgressBoard
+          teams={state?.teams ?? []}
+          roundStates={teamRoundGuessState}
+          maxPoints={state?.mode?.required_points_to_win ?? DEFAULT_SCOREBOARD_MAX_POINTS}
+          winnerTeamIds={winnerTeamIds}
+          hasWinnerLock={hasWinnerLock}
+          onToggleFact={onToggleFact}
+          onPenalty={onPenalty}
+        />
+      </section>
 
       {finishGameOpen && (
         <div className="finish-game-overlay" role="dialog" aria-modal="true" aria-label="Finish game dialog">
@@ -608,7 +369,29 @@ export function HostLobbyPage() {
         </div>
       )}
 
-      {error && <p className="danger-text">{error}</p>}
+      {videoPreviewOpen && previewPlayback && (
+        <div
+          className="video-round-overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Video round preview"
+          onClick={() => setVideoPreviewOpen(false)}
+        >
+          <div className="video-round-popup">
+            {previewPlayback.mode === 'video_clip' && previewPlayback.clip_url ? (
+              <iframe
+                src={previewPlayback.clip_url}
+                title="Video snippet preview"
+                className="video-round-frame"
+                allow="autoplay; encrypted-media; picture-in-picture"
+                allowFullScreen
+              />
+            ) : (
+              previewFrame && <img src={previewFrame} alt="Video round screenshot" className="video-round-frame" />
+            )}
+          </div>
+        </div>
+      )}
     </main>
   );
 }

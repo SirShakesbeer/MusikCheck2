@@ -33,3 +33,15 @@ export const API_RETRY_DEFAULTS = {
   attempts: 3,
   delayMs: 250,
 };
+
+export const PAPER_BUTTON_ANIMATION_DEFAULTS = {
+  shapeMorphIntervalMs: 300,
+  shapeMorphScaleMin: 0.97,
+  shapeMorphScaleMax: 1.03,
+  shapeMorphRotateDeg: 1.2,
+  shapeMorphSkewDeg: 1.1,
+  roundCrumpleDurationMs: 280,
+  roundFallDurationMs: 220,
+  roundSlideInDurationMs: 320,
+  roundStaggerMs: 55,
+} as const;

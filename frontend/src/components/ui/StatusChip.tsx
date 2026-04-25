@@ -17,5 +17,5 @@ function joinClasses(...classes: Array<string | undefined>) {
 }
 
 export function StatusChip({ tone = 'default', className, ...props }: Props) {
-  return <p className={joinClasses('status-chip', TONE_CLASS[tone], className)} {...props} />;
+  return <p className={joinClasses('status-chip paper-chip', TONE_CLASS[tone], className)} {...props} />;
 }
