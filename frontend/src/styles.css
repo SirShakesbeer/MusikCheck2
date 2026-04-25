@@ -52,7 +52,7 @@
   }
 
   body {
-    @apply m-0 min-h-screen bg-mc-ink px-3 py-4 text-slate-100 sm:px-5;
+    @apply m-0 min-h-screen bg-mc-ink text-slate-100;
     font-family: 'Barlow', sans-serif;
     background-image:
       radial-gradient(circle at 15% 12%, var(--mc-bg-grad-a), transparent 33%),
@@ -76,7 +76,7 @@
   }
 
   main {
-    @apply mx-auto mt-12 w-full max-w-6xl animate-floatIn rounded-3xl border border-white/10 bg-mc-night/90 p-4 shadow-card backdrop-blur-md sm:mt-0 sm:p-6;
+    @apply w-full max-w-6xl animate-floatIn rounded-3xl border border-white/10 bg-mc-night/90 p-4 shadow-card backdrop-blur-md sm:mt-0 sm:p-6;
   }
 
   section {
@@ -241,6 +241,10 @@
     @apply min-h-0 rounded-full border-white/20 bg-black/30 px-3 py-1 text-sm;
   }
 
+  .home-page {
+    @apply px-3 py-4 mx-auto mt-12 sm:px-5;
+  }
+
   .host-actions-grid {
     @apply grid grid-cols-1 gap-2 sm:flex sm:flex-wrap;
   }
@@ -250,7 +254,7 @@
   }
 
   .host-lobby-shell {
-    @apply m-0 flex h-[100dvh] max-w-none flex-col gap-3 overflow-hidden rounded-none border-0 bg-transparent p-3 sm:p-4;
+    @apply m-0 flex h-[100dvh] max-w-none flex-col gap-3 overflow-hidden rounded-none border-0 bg-transparent sm:p-4;
   }
 
   .host-lobby-header {
@@ -266,11 +270,11 @@
   }
 
   .host-lobby-controls {
-    @apply shrink-0 rounded-3xl border border-white/10 bg-black/10 p-3 backdrop-blur-sm;
+    @apply shrink-0;
   }
 
   .host-lobby-board {
-    @apply relative min-h-0 flex-1 overflow-hidden rounded-3xl border border-white/10 bg-black/5 p-2 sm:p-3;
+    @apply relative min-h-0 flex-1 rounded-3xl;
   }
 
   .round-controls-shell {
@@ -297,8 +301,12 @@
     @apply flex flex-wrap gap-2;
   }
 
+  .setup-page {
+    @apply px-3 mx-auto my-2 sm:px-5;
+  }
+
   .team-progress-board {
-    @apply grid h-full min-h-0 overflow-hidden;
+    @apply grid h-full min-h-0;
     grid-template-rows: repeat(var(--team-count, 1), minmax(0, 1fr));
     row-gap: 0.45rem;
     align-items: center;

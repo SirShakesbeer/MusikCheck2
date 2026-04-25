@@ -27,7 +27,7 @@ export function HomePage() {
   };
 
   return (
-    <main>
+    <main className='home-page'>
       <Card>
         <h1 className="page-heading mt-2">MusikCheck 2</h1>
         <p className="page-subheading">The classic Thomasius music quiz with a modern twist.</p>

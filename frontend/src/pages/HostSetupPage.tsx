@@ -480,7 +480,7 @@ export function HostSetupPage() {
 
   return (
     <>
-      <main>
+      <main className='setup-page'>
         <Card>
           <StatusChip>Round Setup</StatusChip>
           <div className='flex flex-row'>

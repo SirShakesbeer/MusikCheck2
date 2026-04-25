@@ -546,11 +546,13 @@ class GameEngine:
         else:
             round_rule = next((rule for rule in mode.round_rules if str(rule.kind).strip().lower() == "video"), None)
         options = round_rule.options if round_rule and isinstance(round_rule.options, dict) else {}
-        thumbnail_variants = ["0.jpg", "1.jpg", "2.jpg", "3.jpg"]
+        # Prefer higher quality thumbnails where available.
+        stage1_variants = ["maxresdefault.jpg", "sddefault.jpg", "hqdefault.jpg", "mqdefault.jpg", "0.jpg"]
+        stage2_variants = ["hq1.jpg", "hq2.jpg", "hq3.jpg", "1.jpg", "2.jpg", "3.jpg"]
 
         if stage_index == 0:
-            variant_index = self._stable_int(f"{video_id}:{runtime.song_number}:s1") % len(thumbnail_variants)
-            frame_url = f"https://i.ytimg.com/vi/{video_id}/{thumbnail_variants[variant_index]}"
+            variant_index = self._stable_int(f"{video_id}:{runtime.song_number}:s1") % len(stage1_variants)
+            frame_url = f"https://i.ytimg.com/vi/{video_id}/{stage1_variants[variant_index]}"
             return {
                 "mode": "single_frame",
                 "frame_urls": [frame_url],
@@ -568,13 +570,13 @@ class GameEngine:
             frame_count = max(2, min(12, frame_count))
 
             ordered_variants = sorted(
-                thumbnail_variants,
+                stage2_variants,
                 key=lambda variant: self._stable_int(f"{video_id}:{runtime.song_number}:s2:{variant}"),
             )
             selected = ordered_variants[: min(frame_count, len(ordered_variants))]
             if len(selected) < frame_count:
                 remainder = frame_count - len(selected)
-                selected.extend(ordered_variants[:remainder])
+                selected.extend(stage2_variants[:remainder])
 
             frame_urls = [f"https://i.ytimg.com/vi/{video_id}/{variant}" for variant in selected]
 

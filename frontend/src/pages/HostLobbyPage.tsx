@@ -27,6 +27,7 @@ export function HostLobbyPage() {
   const [videoPreviewOpen, setVideoPreviewOpen] = useState<boolean>(false);
   const [videoPreviewRound, setVideoPreviewRound] = useState<RoundState | null>(null);
   const [videoPreviewStageIndex, setVideoPreviewStageIndex] = useState<number>(0);
+  const [videoPreviewFrameIndex, setVideoPreviewFrameIndex] = useState<number>(0);
   const lastPlaybackTokenRef = useRef<number>(0);
 
   const applyUiError = (err: unknown) => {
@@ -262,8 +263,33 @@ export function HostLobbyPage() {
   const winnerTeamIds = new Set(state?.winner_team_ids ?? []);
   const previewPlayback = videoPreviewRound?.video_playback ?? null;
   const previewFrameList = previewPlayback?.frame_urls ?? [];
-  const previewFrameIndex = Math.max(0, Math.min(videoPreviewStageIndex, Math.max(0, previewFrameList.length - 1)));
-  const previewFrame = previewFrameList[previewFrameIndex] ?? previewFrameList[0] ?? null;
+  const previewFrame = previewFrameList[videoPreviewFrameIndex] ?? previewFrameList[0] ?? null;
+
+  useEffect(() => {
+    if (!videoPreviewOpen) {
+      return;
+    }
+    const startIndex = Math.max(0, Math.min(videoPreviewStageIndex, Math.max(0, previewFrameList.length - 1)));
+    setVideoPreviewFrameIndex(startIndex);
+  }, [videoPreviewOpen, videoPreviewStageIndex, previewFrameList.length]);
+
+  useEffect(() => {
+    if (!videoPreviewOpen || !previewPlayback || previewPlayback.mode !== 'frame_loop') {
+      return;
+    }
+    if (previewFrameList.length < 2) {
+      return;
+    }
+
+    const durationMs = Math.max(220, previewPlayback.frame_duration_ms ?? 600);
+    const timer = window.setInterval(() => {
+      setVideoPreviewFrameIndex((current) => (current + 1) % previewFrameList.length);
+    }, durationMs);
+
+    return () => {
+      window.clearInterval(timer);
+    };
+  }, [videoPreviewOpen, previewPlayback, previewFrameList]);
 
   return (
     <main className="host-lobby-shell">
