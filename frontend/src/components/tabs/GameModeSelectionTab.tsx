@@ -1,6 +1,8 @@
+import { ChangeEvent } from 'react';
+
+import { useTranslation } from '../../i18n/useTranslation';
 import { Button, StatusChip } from '../ui';
 import type { GameModePresetState } from '../../types';
-import { ChangeEvent } from 'react';
 
 
 type Props = {
@@ -19,6 +21,7 @@ export function GameModeSelectionTab({
   onSelectPreset,
   onSelectCustom,
 }: Props) {
+  const { t } = useTranslation();
   const cardClass = (selected: boolean) =>
     [
       'w-full rounded-2xl border px-4 py-4 text-left transition',
@@ -42,10 +45,10 @@ export function GameModeSelectionTab({
               <div>
                 <strong className="block text-lg">{preset.name}</strong>
                 <p className="muted-copy mt-1">
-                  {preset.requires_phone_connections ? 'Requires phone connections' : 'No phone required'}
+                  {preset.requires_phone_connections ? t('gameModeSelection.requiresPhoneConnections') : t('gameModeSelection.noPhoneRequired')}
                 </p>
               </div>
-              {selectedPresetKey === preset.key && !customModeSelected && <StatusChip tone="ok">Selected</StatusChip>}
+              {selectedPresetKey === preset.key && !customModeSelected && <StatusChip tone="ok">{t('gameModeSelection.selected')}</StatusChip>}
             </div>
           </button>
         ))}
@@ -57,10 +60,10 @@ export function GameModeSelectionTab({
         >
           <div className="flex items-start justify-between gap-3">
             <div>
-              <strong className="block text-lg">Custom Game</strong>
-              <p className="muted-copy mt-1">Create your own round mix and frequencies</p>
+              <strong className="block text-lg">{t('gameModeSelection.customGame')}</strong>
+              <p className="muted-copy mt-1">{t('gameModeSelection.customDescription')}</p>
             </div>
-            {customModeSelected && <StatusChip tone="ok">Selected</StatusChip>}
+            {customModeSelected && <StatusChip tone="ok">{t('gameModeSelection.selected')}</StatusChip>}
           </div>
         </button>
       </div>

@@ -6,6 +6,7 @@ import { TeamProgressBoard } from '../components/TeamProgressBoard';
 import { Button, Card, StatusChip } from '../components/ui';
 import { API_BASE_URL } from '../config/defaults';
 import { DEFAULT_SCOREBOARD_MAX_POINTS } from '../config/defaults';
+import { useTranslation } from '../i18n/useTranslation';
 import { api } from '../services/api';
 import { RoundPlaybackDispatcher } from '../services/playbackDispatcher';
 import { connectLobbySocket } from '../services/ws';
@@ -17,6 +18,7 @@ export function HostLobbyPage() {
   const navigate = useNavigate();
   const { resetSetup } = useHostSetupStore();
   const playbackDispatcher = useMemo(() => new RoundPlaybackDispatcher(() => {}), []);
+  const { t } = useTranslation();
 
   const [state, setState] = useState<GameState | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -35,7 +37,7 @@ export function HostLobbyPage() {
     const message = err instanceof Error ? err.message : String(err);
     if (message.toLowerCase().includes('expired')) {
       setSessionExpired(true);
-      setError('This session has expired after 24 hours. Start a new lobby to continue.');
+      setError(t('hostSetup.sessionExpiredLong'));
       return;
     }
     setError(message);
@@ -43,6 +45,18 @@ export function HostLobbyPage() {
 
   const stopAllPlayback = () => {
     playbackDispatcher.stop();
+  };
+
+  const applyRoundUpdate = (nextState: GameState, targetStageIndex: number) => {
+    const nextRound = nextState.current_round;
+    if (nextRound?.round_kind === 'video' && nextRound.video_playback) {
+      setVideoPreviewRound(nextRound);
+      setVideoPreviewStageIndex(targetStageIndex);
+      setVideoPreviewOpen(true);
+    }
+
+    setState(nextState);
+    setError(null);
   };
 
   useEffect(() => {
@@ -121,14 +135,7 @@ export function HostLobbyPage() {
         await api.startRound(code);
         const result = await api.playRoundStage(code, 0);
 
-        if (result.data.current_round?.round_kind === 'video' && result.data.current_round.video_playback) {
-          setVideoPreviewRound(result.data.current_round);
-          setVideoPreviewStageIndex(targetStageIndex);
-          setVideoPreviewOpen(true);
-        }
-
-        setState(result.data);
-        setError(null);
+        applyRoundUpdate(result.data, targetStageIndex);
         return;
       }
 
@@ -138,14 +145,7 @@ export function HostLobbyPage() {
 
       const result = await api.playRoundStage(code, targetStageIndex);
 
-      if (result.data.current_round?.round_kind === 'video' && result.data.current_round.video_playback) {
-        setVideoPreviewRound(result.data.current_round);
-        setVideoPreviewStageIndex(targetStageIndex);
-        setVideoPreviewOpen(true);
-      }
-
-      setState(result.data);
-      setError(null);
+      applyRoundUpdate(result.data, targetStageIndex);
     } catch (err) {
       applyUiError(err);
     }
@@ -238,10 +238,10 @@ export function HostLobbyPage() {
     return (
       <main className="host-lobby-shell">
         <header className="host-lobby-header paper-card">
-          <h1 className="page-heading">Session Expired</h1>
-          <p className="danger-text">{error || 'This lobby is no longer available.'}</p>
+          <h1 className="page-heading">{t('hostLobby.sessionExpiredTitle')}</h1>
+          <p className="danger-text">{error || t('hostLobby.sessionExpiredMessage')}</p>
           <div className="source-row mt-3">
-            <Button onClick={() => navigate('/')}>Exit</Button>
+            <Button onClick={() => navigate('/')}>{t('hostLobby.exit')}</Button>
           </div>
         </header>
       </main>
@@ -308,7 +308,7 @@ export function HostLobbyPage() {
   return (
     <main className="host-lobby-shell">
       <header className="host-lobby-header paper-card">
-        <h1 className="page-heading">MusikCheck 2</h1>
+        <h1 className="page-heading">{t('app.title')}</h1>
         <Button
           variant="ghost"
           onClick={() => {
@@ -316,7 +316,7 @@ export function HostLobbyPage() {
             navigate('/');
           }}
         >
-          Exit
+          {t('hostLobby.exit')}
         </Button>
       </header>
 
@@ -335,6 +335,21 @@ export function HostLobbyPage() {
         />
       </div>
 
+      {state?.current_round?.status === 'playing' && (
+        <div className="host-lobby-board mb-3">
+          <Card title={t('hostLobby.buzzer')} tone="panel">
+            {state.current_round.buzzer_player_name ? (
+              <p className="muted-copy">
+                {t('hostLobby.firstPress', { player: state.current_round.buzzer_player_name })}
+                {state.current_round.buzzer_team_name ? t('hostLobby.firstPressFrom', { team: state.current_round.buzzer_team_name }) : ''}
+              </p>
+            ) : (
+              <p className="muted-copy">{t('hostLobby.noBuzzerPressYet')}</p>
+            )}
+          </Card>
+        </div>
+      )}
+
       <section className="host-lobby-board">
         <TeamProgressBoard
           teams={state?.teams ?? []}
@@ -349,24 +364,31 @@ export function HostLobbyPage() {
       </section>
 
       {finishGameOpen && (
-        <div className="finish-game-overlay" role="dialog" aria-modal="true" aria-label="Finish game dialog">
-          <Card title="Game Finished" tone="panel" className="finish-game-card">
+        <div className="finish-game-overlay" role="dialog" aria-modal="true" aria-label={t('hostLobby.gameFinished')}>
+          <Card title={t('hostLobby.gameFinished')} tone="panel" className="finish-game-card">
             {finishGameStats ? (
               <>
                 <p className="muted-copy mb-1">
-                  Winners: {finishGameStats.winner_team_names.length > 0 ? finishGameStats.winner_team_names.join(', ') : 'Unknown'}
+                  {t('hostLobby.winners', {
+                    names: finishGameStats.winner_team_names.length > 0 ? finishGameStats.winner_team_names.join(', ') : t('hostLobby.unknown'),
+                  })}
                 </p>
                 <p className="muted-copy mb-3">
-                  Songs {finishGameStats.total_songs_played} • Players {finishGameStats.total_players} • Top Score {finishGameStats.top_score} • Avg Score {finishGameStats.average_score}
+                  {t('hostLobby.statsLine', {
+                    songs: finishGameStats.total_songs_played,
+                    players: finishGameStats.total_players,
+                    topScore: finishGameStats.top_score,
+                    averageScore: finishGameStats.average_score,
+                  })}
                 </p>
 
                 <div className="finish-stats-grid mb-3">
                   <div>
-                    <span className="muted-copy">Target Score</span>
+                    <span className="muted-copy">{t('hostLobby.targetScore')}</span>
                     <p>{finishGameStats.required_points_to_win}</p>
                   </div>
                   <div>
-                    <span className="muted-copy">Total Points</span>
+                    <span className="muted-copy">{t('hostLobby.totalPoints')}</span>
                     <p>{finishGameStats.total_points_awarded}</p>
                   </div>
                 </div>
@@ -384,10 +406,10 @@ export function HostLobbyPage() {
                 </div>
               </>
             ) : (
-              <p className="muted-copy mb-2">No statistics available.</p>
+              <p className="muted-copy mb-2">{t('hostLobby.noStatsAvailable')}</p>
             )}
 
-            <p className="muted-copy mb-3">Choose what to do next:</p>
+            <p className="muted-copy mb-3">{t('hostLobby.chooseNext')}</p>
             <div className="host-actions-grid">
               <Button
                 onClick={() => {
@@ -395,16 +417,16 @@ export function HostLobbyPage() {
                   navigate('/');
                 }}
               >
-                Go To Home
+                {t('hostLobby.goToHome')}
               </Button>
               <Button
                 variant="secondary"
                 onClick={() => void onSetupSameLobby()}
                 disabled={resettingForNewGame}
               >
-                {resettingForNewGame ? 'Preparing New Game...' : 'Setup Same Lobby'}
+                {resettingForNewGame ? t('hostLobby.preparingNewGame') : t('hostLobby.setupSameLobby')}
               </Button>
-              <Button variant="ghost" onClick={onCloseFinishGame} disabled={resettingForNewGame}>Cancel</Button>
+              <Button variant="ghost" onClick={onCloseFinishGame} disabled={resettingForNewGame}>{t('hostLobby.cancel')}</Button>
             </div>
           </Card>
         </div>
@@ -415,7 +437,7 @@ export function HostLobbyPage() {
           className="video-round-overlay"
           role="dialog"
           aria-modal="true"
-          aria-label="Video round preview"
+          aria-label={t('hostLobby.videoRoundPreview')}
           onClick={() => setVideoPreviewOpen(false)}
         >
           <div className="video-round-popup">
@@ -423,7 +445,7 @@ export function HostLobbyPage() {
               previewClipIsExtractedAsset ? (
                 <video
                   src={previewClipUrl ?? undefined}
-                  title="Video snippet preview"
+                  title={t('hostLobby.videoSnippetPreview')}
                   className="video-round-frame"
                   autoPlay
                   controls
@@ -432,14 +454,14 @@ export function HostLobbyPage() {
               ) : (
                 <iframe
                   src={previewClipUrl ?? undefined}
-                  title="Video snippet preview"
+                  title={t('hostLobby.videoSnippetPreview')}
                   className="video-round-frame"
                   allow="autoplay; encrypted-media; picture-in-picture"
                   allowFullScreen
                 />
               )
             ) : (
-              previewFrame && <img src={previewFrame} alt="Video round screenshot" className="video-round-frame" />
+              previewFrame && <img src={previewFrame} alt={t('hostLobby.videoScreenshot')} className="video-round-frame" />
             )}
           </div>
         </div>

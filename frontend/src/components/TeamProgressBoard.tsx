@@ -1,5 +1,6 @@
 import type { CSSProperties } from 'react';
 
+import { useTranslation } from '../i18n/useTranslation';
 import type { RoundTeamState, TeamState } from '../types';
 import { Button, StatusChip } from './ui';
 
@@ -28,8 +29,9 @@ export function TeamProgressBoard({
   onToggleFact,
   onPenalty,
 }: Props) {
+  const { t } = useTranslation();
   if (teams.length < 1) {
-    return <p className="muted-copy">No teams available yet.</p>;
+    return <p className="muted-copy">{t('teamProgressBoard.noTeamsAvailable')}</p>;
   }
 
   const safeMaxPoints = Math.max(1, maxPoints);
@@ -73,16 +75,19 @@ export function TeamProgressBoard({
           <div key={team.id} className="team-progress-lane">
             <article className="team-paper-card" style={style}>
               <div className="mb-2 flex items-center justify-between gap-2">
-                <strong className="text-lg">{team.name}</strong>
+                <div>
+                  <strong className="text-lg">{team.name}</strong>
+                  <p className="muted-copy text-sm">{t('teamProgressBoard.stopWord', { stopWord: team.stop_word || t('common.none') })}</p>
+                </div>
                 <div className="flex items-center gap-2">
-                  <StatusChip>Score: {team.score}</StatusChip>
-                  {winnerTeamIds.has(team.id) && <StatusChip tone="ok">Finish</StatusChip>}
+                  <StatusChip>{t('teamProgressBoard.score', { score: team.score })}</StatusChip>
+                  {winnerTeamIds.has(team.id) && <StatusChip tone="ok">{t('teamProgressBoard.finish')}</StatusChip>}
                 </div>
               </div>
 
               {teamState && (
                 <p className="muted-copy mb-2">
-                  Artist {teamState.artist_points} / Title {teamState.title_points} / Bonus {teamState.bonus_points}
+                  {t('teamProgressBoard.artist')} {teamState.artist_points} / {t('teamProgressBoard.title')} {teamState.title_points} / {t('teamProgressBoard.bonus')} {teamState.bonus_points}
                 </p>
               )}
 
@@ -93,7 +98,7 @@ export function TeamProgressBoard({
                   variant="ghost"
                   size="sm"
                 >
-                  Toggle Artist
+                  {t('teamProgressBoard.toggleArtist')}
                 </Button>
                 <Button
                   onClick={() => onToggleFact(team.id, 'title')}
@@ -101,15 +106,15 @@ export function TeamProgressBoard({
                   variant="ghost"
                   size="sm"
                 >
-                  Toggle Title
+                  {t('teamProgressBoard.toggleTitle')}
                 </Button>
                 <Button onClick={() => onPenalty(team.id)} disabled={disablePenalty} variant="danger" size="sm">
-                  {penaltyApplied ? 'Penalty Applied' : 'Wrong Guess Penalty'}
+                  {penaltyApplied ? t('teamProgressBoard.penaltyApplied') : t('teamProgressBoard.wrongGuessPenalty')}
                 </Button>
               </div>
 
               {roundFinished && !penaltyApplied && (
-                <p className="muted-copy mt-2">Reveal first, then apply penalty before removing points.</p>
+                <p className="muted-copy mt-2">{t('teamProgressBoard.revealHint')}</p>
               )}
             </article>
           </div>

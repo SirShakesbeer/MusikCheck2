@@ -406,7 +406,7 @@ def cleanup_sources(payload: CleanupSourcesRequest, db: Session = Depends(get_db
 
 
 @router.post("/media/sources/add-orchestrated", response_model=dict)
-def add_source_orchestrated(payload: AddSourceOrchestratedRequest, db: Session = Depends(get_db)):
+async def add_source_orchestrated(payload: AddSourceOrchestratedRequest, db: Session = Depends(get_db)):
     """Register a source and run index/sync in one orchestrated call"""
     try:
         # Register the source
@@ -432,6 +432,14 @@ def add_source_orchestrated(payload: AddSourceOrchestratedRequest, db: Session =
                 source_id,
                 (payload.source_type or "local-folder"),
                 payload.source,
+                payload.added_by_player_name,
+            )
+            await ws_manager.broadcast(
+                payload.lobby_code,
+                {
+                    "type": "sources",
+                    "data": game_engine.list_lobby_sources(db, payload.lobby_code),
+                },
             )
         
         data = AddSourceOrchestratedResponse(source_id=source_id, total_tracks=total_tracks)
@@ -623,12 +631,15 @@ async def save_lobby_setup(code: str, payload: SaveLobbySetupRequest, db: Sessio
             db,
             code,
             team_names=payload.teams,
+            team_stop_words=payload.team_stop_words,
             spotify_connected=payload.spotify_connected,
             mode_title=payload.mode_title,
         )
         game_engine.update_lobby_mode(db, code, payload.preset_key, custom_mode)
 
         data = LobbySetupState(**game_engine.get_lobby_setup(db, code))
+        state = game_engine.get_state(db, code, message="Lobby setup updated")
+        await ws_manager.broadcast(code, {"type": "state", "data": state.model_dump()})
         return {"ok": True, "data": data.model_dump()}
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
@@ -654,12 +665,13 @@ def get_lobby_sources(code: str, db: Session = Depends(get_db)):
 
 
 @router.post("/lobbies/{code}/sources/remove", response_model=dict)
-def remove_lobby_source(code: str, payload: CleanupSourcesRequest, db: Session = Depends(get_db)):
+async def remove_lobby_source(code: str, payload: CleanupSourcesRequest, db: Session = Depends(get_db)):
     try:
         for source_id in payload.source_ids:
             game_engine.remove_source_from_lobby(db, code, source_id)
         rows = game_engine.list_lobby_sources(db, code)
         data = [LobbySourceState(**row).model_dump() for row in rows]
+        await ws_manager.broadcast(code, {"type": "sources", "data": data})
         return {"ok": True, "data": data}
     except ValueError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
@@ -749,6 +761,17 @@ async def finish_round(code: str, db: Session = Depends(get_db)):
     try:
         game_engine.finish_round(db, code)
         state = game_engine.get_state(db, code, message="Round finished")
+        await ws_manager.broadcast(code, {"type": "state", "data": state.model_dump()})
+        return ApiEnvelope(data=state)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
+
+@router.post("/lobbies/{code}/rounds/buzz", response_model=ApiEnvelope)
+async def buzz_round(code: str, payload: PlayerReadyRequest, db: Session = Depends(get_db)):
+    try:
+        game_engine.buzzer_in(db, code, payload.player_id)
+        state = game_engine.get_state(db, code, message="Buzzer pressed")
         await ws_manager.broadcast(code, {"type": "state", "data": state.model_dump()})
         return ApiEnvelope(data=state)
     except ValueError as error:

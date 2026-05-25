@@ -1,10 +1,7 @@
+import { useTranslation } from '../i18n/useTranslation';
 import { useThemeStore, type ThemeName } from '../stores/themeStore';
 
-const THEMES: Array<{ value: ThemeName; label: string }> = [
-  { value: 'neon', label: 'Neon Showdown' },
-  { value: 'sunset-pop', label: 'Sunset Pop' },
-  { value: 'retro-arcade', label: 'Retro Arcade' },
-];
+const THEME_VALUES: ThemeName[] = ['neon', 'sunset-pop', 'retro-arcade'];
 
 type ThemeSelectorProps = {
   label?: string;
@@ -18,19 +15,27 @@ function joinClasses(...classes: Array<string | undefined>) {
 
 export function ThemeSelector({ label = 'Skin', className, selectClassName }: ThemeSelectorProps) {
   const { theme, setTheme } = useThemeStore();
+  const { t } = useTranslation();
+  const resolvedLabel = label === 'Skin' ? t('theme.label') : label;
+
+  const themeLabels: Record<ThemeName, string> = {
+    neon: t('theme.neonShowdown'),
+    'sunset-pop': t('theme.sunsetPop'),
+    'retro-arcade': t('theme.retroArcade'),
+  };
 
   return (
     <div className={joinClasses('theme-selector-group', className)}>
-      <span className="text-xs font-semibold uppercase tracking-wide text-cyan-50">{label}</span>
+      <span className="text-xs font-semibold uppercase tracking-wide text-cyan-50">{resolvedLabel}</span>
       <select
         className={selectClassName}
         value={theme}
         onChange={(event) => setTheme(event.target.value as ThemeName)}
         aria-label="Theme selector"
       >
-        {THEMES.map((item) => (
-          <option key={item.value} value={item.value}>
-            {item.label}
+        {THEME_VALUES.map((value) => (
+          <option key={value} value={value}>
+            {themeLabels[value]}
           </option>
         ))}
       </select>
@@ -41,7 +46,7 @@ export function ThemeSelector({ label = 'Skin', className, selectClassName }: Th
 export function ThemeSwitcher() {
   return (
     <div className="floating-theme-switcher">
-      <ThemeSelector label="Skin" />
+      <ThemeSelector />
     </div>
   );
 }

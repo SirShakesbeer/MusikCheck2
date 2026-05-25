@@ -39,6 +39,10 @@ def apply_schema_patches() -> None:
             f"ADD COLUMN playback_provider VARCHAR(64) DEFAULT '{DEFAULT_PLAYBACK_PROVIDER}'",
             "ADD COLUMN playback_ref VARCHAR(2048) DEFAULT ''",
             "ADD COLUMN playback_token INTEGER DEFAULT 0",
+            "ADD COLUMN buzzer_player_id VARCHAR(36) DEFAULT ''",
+            "ADD COLUMN buzzer_player_name VARCHAR(64) DEFAULT ''",
+            "ADD COLUMN buzzer_team_id VARCHAR(36) DEFAULT ''",
+            "ADD COLUMN buzzer_team_name VARCHAR(64) DEFAULT ''",
             f"ADD COLUMN track_duration_seconds INTEGER DEFAULT {DEFAULT_TRACK_DURATION_SECONDS}",
             f"ADD COLUMN snippet_start_offsets VARCHAR(256) DEFAULT '{DEFAULT_SNIPPET_START_OFFSETS}'",
         ],
@@ -52,6 +56,12 @@ def apply_schema_patches() -> None:
             "ADD COLUMN setup_teams TEXT DEFAULT ''",
             f"ADD COLUMN setup_mode_title VARCHAR(128) DEFAULT '{DEFAULT_MODE_TITLE}'",
             "ADD COLUMN spotify_connected BOOLEAN DEFAULT FALSE",
+        ],
+        "teams": [
+            "ADD COLUMN stop_word VARCHAR(64) DEFAULT ''",
+        ],
+        "lobby_sources": [
+            "ADD COLUMN added_by_player_name VARCHAR(64) DEFAULT ''",
         ],
     }
 

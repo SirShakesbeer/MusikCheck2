@@ -108,12 +108,22 @@ export const api = {
     }),
   validateGameMode: (config: GameModeConfig) =>
     post<any, { config: GameModeConfig }>('/game-modes/validate', { config }),
-  addSourceOrchestrated: (providerKey: string, source: string, lobbyCode?: string, sourceType?: string) =>
-    post<any, { provider_key: string; source: string; lobby_code?: string; source_type?: string }>('/media/sources/add-orchestrated', {
+  addSourceOrchestrated: (
+    providerKey: string,
+    source: string,
+    lobbyCode?: string,
+    sourceType?: string,
+    addedByPlayerName?: string,
+  ) =>
+    post<
+      any,
+      { provider_key: string; source: string; lobby_code?: string; source_type?: string; added_by_player_name?: string }
+    >('/media/sources/add-orchestrated', {
       provider_key: providerKey,
       source,
       lobby_code: lobbyCode,
       source_type: sourceType,
+      added_by_player_name: addedByPlayerName,
     }),
   getSpotifyAuthUrl: () => get<SpotifyAuthUrlEnvelope>('/spotify/auth-url'),
   getSpotifyStatus: () => get<SpotifyStatusEnvelope>('/spotify/status'),
@@ -211,6 +221,10 @@ export const api = {
     post<ApiEnvelope, { team_id: string; player_name: string }>(`/lobbies/${code}/rounds/stop`, {
       team_id: teamId,
       player_name: playerName,
+    }),
+  buzzRound: (code: string, playerId: string) =>
+    post<ApiEnvelope, { player_id: string }>(`/lobbies/${code}/rounds/buzz`, {
+      player_id: playerId,
     }),
   submitGuess: (code: string, teamId: string, title: string, artist: string) =>
     post<ApiEnvelope, { team_id: string; title: string; artist: string }>(`/lobbies/${code}/rounds/guess`, {

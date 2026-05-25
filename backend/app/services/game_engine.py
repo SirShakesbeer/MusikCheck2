@@ -185,6 +185,7 @@ class GameEngine:
         db: Session,
         lobby_code: str,
         team_names: list[str],
+        team_stop_words: dict[str, str] | None = None,
         spotify_connected: bool = False,
         mode_title: str | None = None,
     ) -> None:
@@ -196,7 +197,7 @@ class GameEngine:
         if mode_title and mode_title.strip():
             runtime_state.setup_mode_title = mode_title.strip()
 
-        self.sync_lobby_teams(db, lobby_code, team_names)
+        self.sync_lobby_teams(db, lobby_code, team_names, team_stop_words or {})
         db.commit()
 
     def get_lobby_setup(self, db: Session, lobby_code: str) -> dict:
@@ -214,8 +215,11 @@ class GameEngine:
         else:
             parsed_teams = [team.name for team in teams]
 
+        team_stop_words = {team.name: (team.stop_word or "") for team in teams}
+
         return {
             "teams": parsed_teams,
+            "team_stop_words": team_stop_words,
             "preset_key": lobby.mode_key,
             "mode_title": runtime_state.setup_mode_title or "Game Mode Details",
             "spotify_connected": bool(runtime_state.spotify_connected),
@@ -234,11 +238,14 @@ class GameEngine:
         source_id: str,
         source_type: str,
         source_value: str,
+        added_by_player_name: str | None = None,
     ) -> None:
         lobby = self._find_lobby(db, lobby_code)
         source = db.query(MediaSource).filter(MediaSource.id == source_id).first()
         if not source:
             raise ValueError("Source not found")
+
+        contributor_name = (added_by_player_name or "").strip()
 
         existing = (
             db.query(LobbySource)
@@ -248,6 +255,8 @@ class GameEngine:
         if existing:
             existing.source_type = source_type or existing.source_type
             existing.source_value = source_value or existing.source_value
+            if contributor_name and not existing.added_by_player_name:
+                existing.added_by_player_name = contributor_name
             db.commit()
             return
 
@@ -257,6 +266,7 @@ class GameEngine:
                 source_id=source.id,
                 source_type=(source_type or "local-folder").strip(),
                 source_value=(source_value or source.source_value).strip(),
+                added_by_player_name=contributor_name,
             )
         )
         db.commit()
@@ -290,6 +300,7 @@ class GameEngine:
                     "source_type": row.source_type,
                     "source_value": row.source_value,
                     "imported_count": imported_count,
+                    "added_by_player_name": row.added_by_player_name or None,
                 }
             )
         return sources
@@ -359,8 +370,15 @@ class GameEngine:
             "deleted_round_team_rows": deleted_rounds,
         }
 
-    def sync_lobby_teams(self, db: Session, lobby_code: str, team_names: list[str]) -> None:
+    def sync_lobby_teams(
+        self,
+        db: Session,
+        lobby_code: str,
+        team_names: list[str],
+        team_stop_words: dict[str, str] | None = None,
+    ) -> None:
         lobby = self._find_lobby(db, lobby_code)
+        team_stop_words = team_stop_words or {}
 
         normalized_names: list[str] = []
         seen: set[str] = set()
@@ -380,8 +398,9 @@ class GameEngine:
         # Add any missing teams from setup
         for name in normalized_names:
             if name.lower() in existing_by_lower:
+                existing_by_lower[name.lower()].stop_word = (team_stop_words.get(name, existing_by_lower[name.lower()].stop_word) or "").strip()
                 continue
-            db.add(Team(lobby_id=lobby.id, name=name, score=0))
+            db.add(Team(lobby_id=lobby.id, name=name, stop_word=(team_stop_words.get(name, "") or "").strip(), score=0))
 
         # Remove teams that are no longer present in setup
         names_to_keep = {name.lower() for name in normalized_names}
@@ -691,14 +710,80 @@ class GameEngine:
             db.add(team)
             db.flush()
 
-        player = Player(lobby_id=lobby.id, team_id=team.id, name=player_name)
-        db.add(player)
+        normalized_name = player_name.strip()
+        player = (
+            db.query(Player)
+            .filter(Player.lobby_id == lobby.id, Player.name.ilike(normalized_name))
+            .first()
+        )
+        if not player:
+            player = Player(lobby_id=lobby.id, team_id=team.id, name=normalized_name)
+            db.add(player)
+            db.flush()
+        else:
+            player.team_id = team.id
+            player.name = normalized_name
+
+        runtime = (
+            db.query(PlayerRuntimeState)
+            .filter(PlayerRuntimeState.player_id == player.id, PlayerRuntimeState.lobby_id == lobby.id)
+            .first()
+        )
+        if runtime:
+            runtime.ready = False
+        else:
+            db.add(PlayerRuntimeState(player_id=player.id, lobby_id=lobby.id, ready=False))
+
         db.commit()
+
         db.refresh(player)
 
-        player_runtime = PlayerRuntimeState(player_id=player.id, lobby_id=lobby.id, ready=False)
-        db.add(player_runtime)
+    def reset_buzzer(self, db: Session, lobby_code: str) -> None:
+        lobby = self._find_lobby(db, lobby_code)
+        runtime = self._get_active_round(db, lobby.id)
+        if not runtime:
+            return
+
+        runtime.buzzer_player_id = ""
+        runtime.buzzer_player_name = ""
+        runtime.buzzer_team_id = ""
+        runtime.buzzer_team_name = ""
         db.commit()
+
+    def buzzer_in(self, db: Session, lobby_code: str, player_id: str) -> dict:
+        lobby = self._find_lobby(db, lobby_code)
+        runtime = self._get_active_round(db, lobby.id)
+        if not runtime:
+            raise ValueError("No active round")
+        if runtime.status != "playing":
+            raise ValueError("Buzzer is only available while a round is playing")
+
+        if runtime.buzzer_player_id:
+            return {
+                "buzzer_player_id": runtime.buzzer_player_id,
+                "buzzer_player_name": runtime.buzzer_player_name or None,
+                "buzzer_team_id": runtime.buzzer_team_id or None,
+                "buzzer_team_name": runtime.buzzer_team_name or None,
+            }
+
+        player = db.query(Player).filter(Player.id == player_id, Player.lobby_id == lobby.id).first()
+        if not player:
+            raise ValueError("Player not found")
+
+        team = db.query(Team).filter(Team.id == player.team_id, Team.lobby_id == lobby.id).first() if player.team_id else None
+
+        runtime.buzzer_player_id = player.id
+        runtime.buzzer_player_name = player.name
+        runtime.buzzer_team_id = team.id if team else ""
+        runtime.buzzer_team_name = team.name if team else ""
+        db.commit()
+
+        return {
+            "buzzer_player_id": runtime.buzzer_player_id,
+            "buzzer_player_name": runtime.buzzer_player_name or None,
+            "buzzer_team_id": runtime.buzzer_team_id or None,
+            "buzzer_team_name": runtime.buzzer_team_name or None,
+        }
 
     def set_player_ready(self, db: Session, lobby_code: str, player_id: str, ready: bool) -> None:
         lobby = self._find_lobby(db, lobby_code)
@@ -751,6 +836,10 @@ class GameEngine:
                 max_stage_reached=0,
                 can_guess=False,
                 status="ready",
+                buzzer_player_id="",
+                buzzer_player_name="",
+                buzzer_team_id="",
+                buzzer_team_name="",
                 snippet_url=processed.snippet_url,
                 playback_provider=selection["provider_key"],
                 playback_ref=selection["playback_ref"],
@@ -770,6 +859,10 @@ class GameEngine:
             active_round.max_stage_reached = 0
             active_round.can_guess = False
             active_round.status = "ready"
+            active_round.buzzer_player_id = ""
+            active_round.buzzer_player_name = ""
+            active_round.buzzer_team_id = ""
+            active_round.buzzer_team_name = ""
             active_round.snippet_url = processed.snippet_url
             active_round.playback_provider = selection["provider_key"]
             active_round.playback_ref = selection["playback_ref"]
@@ -812,6 +905,10 @@ class GameEngine:
         round_state.max_stage_reached = max(current_max_stage, stage_index)
         round_state.can_guess = False
         round_state.status = "playing"
+        round_state.buzzer_player_id = ""
+        round_state.buzzer_player_name = ""
+        round_state.buzzer_team_id = ""
+        round_state.buzzer_team_name = ""
         round_state.playback_token = max(0, int(round_state.playback_token or 0)) + 1
         db.commit()
         return True
@@ -1292,6 +1389,10 @@ class GameEngine:
                 extraction_assets=self._resolve_extraction_assets(db, runtime),
                 can_guess=runtime.can_guess,
                 status=runtime.status,
+                buzzer_player_id=runtime.buzzer_player_id or None,
+                buzzer_player_name=runtime.buzzer_player_name or None,
+                buzzer_team_id=runtime.buzzer_team_id or None,
+                buzzer_team_name=runtime.buzzer_team_name or None,
                 playback_token=max(0, int(runtime.playback_token or 0)),
                 reveal_title=reveal_title,
                 reveal_artist=reveal_artist,
@@ -1367,7 +1468,7 @@ class GameEngine:
             lobby_code=lobby.code,
             mode_key=lobby.mode_key,
             mode=mode_state,
-            teams=[TeamState(id=t.id, name=t.name, score=t.score) for t in teams],
+            teams=[TeamState(id=t.id, name=t.name, stop_word=t.stop_word or "", score=t.score) for t in teams],
             winner_team_ids=winner_team_ids,
             has_winner_lock=len(winner_team_ids) > 0,
             players=[

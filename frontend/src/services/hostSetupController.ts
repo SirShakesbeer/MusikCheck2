@@ -2,6 +2,21 @@ import { api } from './api';
 import type { GameModeConfig, GameModePresetState, GameState } from '../types';
 import type { SetupStep } from '../stores/hostSetupStore';
 
+async function updateExistingLobbySetup(params: {
+  lobbyCode: string;
+  selectedPresetKey: string;
+  modeConfig: GameModeConfig;
+  teamNames: string[];
+}): Promise<GameState> {
+  await api.updateLobbyMode(params.lobbyCode, {
+    preset_key: params.selectedPresetKey,
+    mode_config: params.modeConfig,
+  });
+
+  const synced = await api.syncLobbyTeams(params.lobbyCode, params.teamNames);
+  return synced.data;
+}
+
 export async function ensurePhoneLobby(params: {
   state: GameState | null;
   selectedPresetKey: string;
@@ -10,15 +25,12 @@ export async function ensurePhoneLobby(params: {
   teamNames: string[];
 }): Promise<GameState | null> {
   if (params.state?.lobby_code) {
-    // Update the mode config for the existing lobby
-    const modeUpdated = await api.updateLobbyMode(params.state.lobby_code, {
-      preset_key: params.selectedPresetKey,
-      mode_config: params.modeConfig,
+    return updateExistingLobbySetup({
+      lobbyCode: params.state.lobby_code,
+      selectedPresetKey: params.selectedPresetKey,
+      modeConfig: params.modeConfig,
+      teamNames: params.teamNames,
     });
-    
-    // Then sync the teams
-    const synced = await api.syncLobbyTeams(params.state.lobby_code, params.teamNames);
-    return synced.data;
   }
 
   const result = await api.createLobby({

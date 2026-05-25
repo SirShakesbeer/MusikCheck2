@@ -90,6 +90,7 @@ class AddSourceOrchestratedRequest(BaseModel):
     source: str = Field(min_length=1)
     lobby_code: str | None = None
     source_type: str | None = None
+    added_by_player_name: str | None = Field(default=None, max_length=64)
 
 
 class AddSourceOrchestratedResponse(BaseModel):

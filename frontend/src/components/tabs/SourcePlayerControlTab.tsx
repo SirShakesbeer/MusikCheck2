@@ -1,11 +1,13 @@
 import { ChangeEvent, RefObject } from 'react';
 
+import { useTranslation } from '../../i18n/useTranslation';
 import { Button, Field, StatusChip } from '../ui';
 import type { LocalSource, SourceType } from '../../services/mediaSourceController';
 import type { GameState } from '../../types';
 
 type Props = {
   setupTeamNames: string[];
+  setupTeamStopWords: Record<string, string>;
   newTeamName: string;
   spotifyConnected: boolean;
   spotifyAuthBusy: boolean;
@@ -21,6 +23,7 @@ type Props = {
   runtimeTestMode: boolean;
   runtimeConfigBusy: boolean;
   onNewTeamNameChange: (value: string) => void;
+  onTeamStopWordChange: (teamName: string, stopWord: string) => void;
   onAddTeam: () => void;
   onRemoveTeam: (teamName: string) => void;
   onSourceTypeChange: (value: SourceType) => void;
@@ -34,14 +37,9 @@ type Props = {
   onToggleRuntimeTestMode: (enabled: boolean) => void;
 };
 
-const SOURCE_TYPE_OPTIONS: { value: SourceType; label: string }[] = [
-  { value: 'youtube-playlist', label: 'YouTube Playlist Link' },
-  { value: 'spotify-playlist', label: 'Spotify Playlist Link' },
-  { value: 'local-folder', label: 'Local Folder' },
-];
-
 export function SourcePlayerControlTab({
   setupTeamNames,
+  setupTeamStopWords,
   newTeamName,
   newSourceType,
   newSourceValue,
@@ -58,6 +56,7 @@ export function SourcePlayerControlTab({
   runtimeConfigBusy,
   onToggleRuntimeTestMode,
   onNewTeamNameChange,
+  onTeamStopWordChange,
   onAddTeam,
   onRemoveTeam,
   onSourceTypeChange,
@@ -69,11 +68,22 @@ export function SourcePlayerControlTab({
   onStartGame,
   onConnectSpotify,
 }: Props) {
+  const { t } = useTranslation();
+  const teamMembersByTeamId = new Map<string, string[]>();
+  for (const player of state?.players ?? []) {
+    if (!player.team_id) {
+      continue;
+    }
+    const members = teamMembersByTeamId.get(player.team_id) ?? [];
+    members.push(player.name);
+    teamMembersByTeamId.set(player.team_id, members);
+  }
+
   return (
     <div>
 
       <div className="source-row">
-        <Field label="Team name">
+        <Field label={t('sourcePlayerControl.teamName')}>
           <input
             value={newTeamName}
             onChange={(event: ChangeEvent<HTMLInputElement>) => onNewTeamNameChange(event.target.value)}
@@ -81,43 +91,68 @@ export function SourcePlayerControlTab({
           />
         </Field>
         <Button onClick={onAddTeam} type="button">
-          Add Team
+          {t('sourcePlayerControl.addTeam')}
         </Button>
       </div>
 
       {setupTeamNames.length > 0 && (
         <div className="source-list">
-          {setupTeamNames.map((teamName) => (
-            <div className="source-row" key={teamName}>
-              <strong>Team</strong>
-              <span>{teamName}</span>
-              <Button type="button" onClick={() => onRemoveTeam(teamName)} variant="danger" size="sm">
-                Remove
-              </Button>
-            </div>
-          ))}
+          {setupTeamNames.map((teamName) => {
+            const team = state?.teams.find((item) => item.name.toLowerCase() === teamName.toLowerCase());
+            const members = team ? teamMembersByTeamId.get(team.id) ?? [] : [];
+            const stopWord = setupTeamStopWords[teamName] ?? '';
+
+            return (
+              <div className="source-row flex-col items-start gap-1" key={teamName}>
+                <div className="source-row w-full">
+                  <strong>{t('sourcePlayerControl.team')}</strong>
+                  <span>{teamName}</span>
+                  <Field label={t('sourcePlayerControl.stopWord')} className="min-w-0 flex-1">
+                    <input
+                      value={stopWord}
+                      onChange={(event: ChangeEvent<HTMLInputElement>) => onTeamStopWordChange(teamName, event.target.value)}
+                      placeholder={t('sourcePlayerControl.stopWord')}
+                    />
+                  </Field>
+                  <Button type="button" onClick={() => onRemoveTeam(teamName)} variant="danger" size="sm">
+                    {t('sourcePlayerControl.remove')}
+                  </Button>
+                </div>
+                <p className="muted-copy text-left">
+                  {t('sourcePlayerControl.stopWordLine', { stopWord: stopWord || t('common.none') })}
+                </p>
+                <p className="muted-copy text-left">
+                  {t('sourcePlayerControl.members')}: {members.length > 0 ? members.join(', ') : t('sourcePlayerControl.noPlayersYet')}
+                </p>
+              </div>
+            );
+          })}
         </div>
       )}
 
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <StatusChip tone={spotifyConnected ? 'ok' : 'warn'}>
-          Spotify: {spotifyConnected ? 'Connected' : 'Not connected'}
+          {t('sourcePlayerControl.spotifyLabel')}: {spotifyConnected ? t('sourcePlayerControl.spotifyConnected') : t('sourcePlayerControl.spotifyNotConnected')}
         </StatusChip>
         <Button onClick={onConnectSpotify} disabled={spotifyAuthBusy} variant="ghost" size="sm">
-          {spotifyAuthBusy ? 'Connecting...' : 'Connect Spotify'}
+          {spotifyAuthBusy ? t('sourcePlayerControl.connectingSpotify') : t('sourcePlayerControl.connectSpotify')}
         </Button>
       </div>
       {!runtimeTestMode && !youtubeApiConfigured && (
-        <p className="danger-text">YouTube API key is not configured; real YouTube ingestion will fail.</p>
+        <p className="danger-text">{t('sourcePlayerControl.youtubeApiNotConfigured')}</p>
       )}
 
       <div className="source-row">
-        <Field label="Source type">
+        <Field label={t('sourcePlayerControl.sourceType')}>
           <select
             value={newSourceType}
             onChange={(event: ChangeEvent<HTMLSelectElement>) => onSourceTypeChange(event.target.value as SourceType)}
           >
-            {SOURCE_TYPE_OPTIONS.map((option) => (
+            {[
+              { value: 'youtube-playlist' as SourceType, label: t('mediaSourceTypes.youtubePlaylistLink') },
+              { value: 'spotify-playlist' as SourceType, label: t('mediaSourceTypes.spotifyPlaylistLink') },
+              { value: 'local-folder' as SourceType, label: t('mediaSourceTypes.localFolder') },
+            ].map((option) => (
               <option key={option.value} value={option.value}>
                 {option.label}
               </option>
@@ -125,22 +160,22 @@ export function SourcePlayerControlTab({
           </select>
         </Field>
 
-        <Field label="Source value">
+        <Field label={t('sourcePlayerControl.sourceValue')}>
           <input
             value={newSourceValue}
             onChange={(event: ChangeEvent<HTMLInputElement>) => onSourceValueChange(event.target.value)}
-            placeholder="Playlist URL or folder name"
+            placeholder={t('sourcePlayerControl.playlistUrlOrFolderName')}
           />
         </Field>
 
         {newSourceType === 'local-folder' && (
           <Button onClick={onPickLocalFolder} type="button" variant="ghost">
-            Pick Local Folder
+            {t('sourcePlayerControl.pickLocalFolder')}
           </Button>
         )}
 
         <Button onClick={onAddSource} type="button">
-          Add Source
+          {t('sourcePlayerControl.addSource')}
         </Button>
       </div>
 
@@ -158,9 +193,10 @@ export function SourcePlayerControlTab({
             <div className="source-row" key={source.id}>
               <strong>{source.type}</strong>
               <span>{source.value}</span>
-              {typeof source.importedCount === 'number' && <span>{source.importedCount} tracks</span>}
+                {typeof source.importedCount === 'number' && <span>{source.importedCount} {t('common.tracks')}</span>}
+              <span>{source.addedByPlayerName ? t('player.addedBy', { name: source.addedByPlayerName }) : t('sourcePlayerControl.addedByHost')}</span>
               <Button type="button" onClick={() => onRemoveSource(source.id)} variant="danger" size="sm">
-                Remove
+                {t('sourcePlayerControl.remove')}
               </Button>
             </div>
           ))}
@@ -170,18 +206,18 @@ export function SourcePlayerControlTab({
       {state?.lobby_code && (
         <>
           <p>
-            Lobby code: <strong>{state.lobby_code}</strong>
+            {t('sourcePlayerControl.lobbyCode')}: <strong>{state.lobby_code}</strong>
           </p>
-          <StatusChip>Share URL: {`${window.location.origin}/player/${state.lobby_code}`}</StatusChip>
+          <StatusChip>{t('sourcePlayerControl.shareUrl')}: {`${window.location.origin}/player/${state.lobby_code}`}</StatusChip>
 
-          <h4 className="mt-3 mb-2 text-lg font-display tracking-wide text-mc-cyan">Connected Players</h4>
+          <h4 className="mt-3 mb-2 text-lg font-display tracking-wide text-mc-cyan">{t('sourcePlayerControl.connectedPlayers')}</h4>
           {state.players.length < 1 ? (
-            <p className="muted-copy">No players connected yet.</p>
+            <p className="muted-copy">{t('sourcePlayerControl.noPlayersConnectedYet')}</p>
           ) : (
             <ul>
               {state.players.map((player) => (
                 <li key={player.id}>
-                  {player.name} ({player.ready ? 'ready' : 'not ready'})
+                  {player.name} ({player.ready ? t('sourcePlayerControl.ready') : t('sourcePlayerControl.notReady')})
                 </li>
               ))}
             </ul>
@@ -199,12 +235,12 @@ export function SourcePlayerControlTab({
             disabled={runtimeConfigBusy}
             className="min-h-0 h-4 w-4"
           />
-          <span>Test mode (placeholder media)</span>
+          <span>{t('sourcePlayerControl.testModePlaceholderMedia')}</span>
         </label>
       </div>
 
       <Button onClick={onStartGame} disabled={startGameBusy || startGameDisabled} variant="secondary">
-        {startGameBusy ? 'Starting...' : 'Start Game'}
+        {startGameBusy ? t('sourcePlayerControl.starting') : t('sourcePlayerControl.startGame')}
       </Button>
       {startGameHint && <p className="danger-text mt-2">{startGameHint}</p>}
     </div>

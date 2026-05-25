@@ -20,6 +20,7 @@ class UpdateLobbyModeRequest(BaseModel):
 
 class SaveLobbySetupRequest(BaseModel):
     teams: list[str] = []
+    team_stop_words: dict[str, str] = Field(default_factory=dict)
     preset_key: str | None = None
     mode_title: str | None = Field(default=None, max_length=128)
     mode_config: GameModePresetConfig | None = None
@@ -28,6 +29,7 @@ class SaveLobbySetupRequest(BaseModel):
 
 class LobbySetupState(BaseModel):
     teams: list[str]
+    team_stop_words: dict[str, str] = Field(default_factory=dict)
     preset_key: str
     mode_title: str
     spotify_connected: bool
@@ -38,6 +40,7 @@ class LobbySourceState(BaseModel):
     source_type: str
     source_value: str
     imported_count: int
+    added_by_player_name: str | None = None
 
 
 class LobbySpotifyStateRequest(BaseModel):
@@ -72,6 +75,7 @@ class TeamPenaltyRequest(BaseModel):
 class TeamState(BaseModel):
     id: str
     name: str
+    stop_word: str = ""
     score: int
 
 
@@ -131,6 +135,10 @@ class RoundState(BaseModel):
     extraction_assets: ExtractionAssetState | None = None
     can_guess: bool
     status: str
+    buzzer_player_id: str | None = None
+    buzzer_player_name: str | None = None
+    buzzer_team_id: str | None = None
+    buzzer_team_name: str | None = None
     playback_token: int = 0
     reveal_title: str | None = None
     reveal_artist: str | None = None

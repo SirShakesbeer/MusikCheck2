@@ -9,6 +9,7 @@ export type LocalSource = {
   backendSourceId?: string;
   importedCount?: number;
   ingestError?: string;
+  addedByPlayerName?: string | null;
 };
 
 const providerKeyByType: Record<SourceType, string> = {
@@ -26,6 +27,7 @@ export async function addSource(params: {
   sourceValue: string;
   pendingLocalFileCount: number;
   lobbyCode?: string;
+  addedByPlayerName?: string;
 }): Promise<LocalSource> {
   const sourceValue = params.sourceValue.trim();
   if (!sourceValue) {
@@ -44,6 +46,7 @@ export async function addSource(params: {
     sourceValue,
     params.lobbyCode,
     params.sourceType,
+    params.addedByPlayerName,
   );
 
   return {
@@ -52,6 +55,7 @@ export async function addSource(params: {
     value: sourceValue,
     backendSourceId: orchestrated.data.source_id,
     importedCount: orchestrated.data.total_tracks,
+    addedByPlayerName: params.addedByPlayerName || null,
   };
 }
 

@@ -33,6 +33,7 @@ class Team(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     lobby_id: Mapped[str] = mapped_column(String(36), ForeignKey("lobbies.id"), index=True)
     name: Mapped[str] = mapped_column(String(64))
+    stop_word: Mapped[str] = mapped_column(String(64), default="")
     score: Mapped[int] = mapped_column(Integer, default=0)
 
     lobby: Mapped[Lobby] = relationship(back_populates="teams")
@@ -87,6 +88,10 @@ class ActiveRoundState(Base):
     max_stage_reached: Mapped[int] = mapped_column(Integer, default=0)
     can_guess: Mapped[bool] = mapped_column(Boolean, default=False)
     status: Mapped[str] = mapped_column(String(64), default="playing")
+    buzzer_player_id: Mapped[str] = mapped_column(String(36), default="")
+    buzzer_player_name: Mapped[str] = mapped_column(String(64), default="")
+    buzzer_team_id: Mapped[str] = mapped_column(String(36), default="")
+    buzzer_team_name: Mapped[str] = mapped_column(String(64), default="")
     snippet_url: Mapped[str] = mapped_column(String(2048))
     playback_provider: Mapped[str] = mapped_column(String(64), default=DEFAULT_PLAYBACK_PROVIDER)
     playback_ref: Mapped[str] = mapped_column(String(2048), default="")
@@ -119,6 +124,7 @@ class LobbySource(Base):
     source_id: Mapped[str] = mapped_column(String(36), ForeignKey("media_sources.id"), index=True)
     source_type: Mapped[str] = mapped_column(String(64), default="local-folder")
     source_value: Mapped[str] = mapped_column(String(1024), default="")
+    added_by_player_name: Mapped[str] = mapped_column(String(64), default="")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 

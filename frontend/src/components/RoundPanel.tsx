@@ -1,6 +1,7 @@
 import { AnimatePresence, motion } from 'framer-motion';
 
 import { DEFAULT_ROUND_STAGE_COUNT, PAPER_BUTTON_ANIMATION_DEFAULTS, UNKNOWN_REVEAL_VALUE } from '../config/defaults';
+import { useTranslation } from '../i18n/useTranslation';
 import type { RoundState } from '../types';
 import { Button, StatusChip } from './ui';
 
@@ -25,6 +26,7 @@ export function RoundPanel({
   hasWinnerLock,
   finishGameLoading = false,
 }: Props) {
+  const { t } = useTranslation();
   const isFinished = round?.status === 'finished';
   const stageCount = round?.snippet_start_offsets?.length || DEFAULT_ROUND_STAGE_COUNT;
   const mustRevealBeforeFinish = hasWinnerLock && !isFinished;
@@ -32,16 +34,16 @@ export function RoundPanel({
 
   const getButtonState = (targetStage: number): { disabled: boolean; label: string } => {
     if (!round) {
-      return { disabled: targetStage !== 0, label: `Snippet ${targetStage + 1}` };
+      return { disabled: targetStage !== 0, label: t('roundPanel.snippet', { index: targetStage + 1 }) };
     }
-    return { disabled: false, label: `Snippet ${targetStage + 1}` };
+    return { disabled: false, label: t('roundPanel.snippet', { index: targetStage + 1 }) };
   };
 
   return (
     <div className="round-controls-stage">
       {!round ? (
         <div className="round-actions-row">
-          <Button onClick={onStart}>Start Round</Button>
+          <Button onClick={onStart}>{t('roundPanel.startRound')}</Button>
         </div>
       ) : (
         <div className="round-controls-shell">
@@ -78,19 +80,19 @@ export function RoundPanel({
 
             <div className="round-static-row">
               <Button onClick={onRevealRound} disabled={isFinished} variant="secondary">
-                Reveal
+                {t('roundPanel.reveal')}
               </Button>
               {hasWinnerLock ? (
                 <Button onClick={onFinishGame} disabled={mustRevealBeforeFinish || finishGameLoading}>
-                  {finishGameLoading ? 'Loading Stats...' : 'Finish Game'}
+                  {finishGameLoading ? t('roundPanel.loadingStats') : t('roundPanel.finishGame')}
                 </Button>
               ) : (
-                <Button onClick={onNextRound}>Next Round</Button>
+                <Button onClick={onNextRound}>{t('roundPanel.nextRound')}</Button>
               )}
             </div>
           </div>
           {mustRevealBeforeFinish && (
-            <p className="muted-copy mt-2">A team reached the maximum score. Reveal first, then finish or deduct points.</p>
+            <p className="muted-copy mt-2">{t('roundPanel.mustRevealBeforeFinish')}</p>
           )}
           <AnimatePresence>
             {isFinished && (round.reveal_artist || round.reveal_title || round.reveal_source) && (
@@ -101,9 +103,9 @@ export function RoundPanel({
                 exit={{ opacity: 0, y: -6 }}
                 transition={{ duration: 0.2 }}
               >
-                <p><strong>Artist:</strong> {round.reveal_artist || UNKNOWN_REVEAL_VALUE}</p>
-                <p><strong>Title:</strong> {round.reveal_title || UNKNOWN_REVEAL_VALUE}</p>
-                <p><strong>Source:</strong> {round.reveal_source || round.playback_provider}</p>
+                <p><strong>{t('roundPanel.artist')}:</strong> {round.reveal_artist || UNKNOWN_REVEAL_VALUE}</p>
+                <p><strong>{t('roundPanel.title')}:</strong> {round.reveal_title || UNKNOWN_REVEAL_VALUE}</p>
+                <p><strong>{t('roundPanel.source')}:</strong> {round.reveal_source || round.playback_provider}</p>
               </motion.div>
             )}
           </AnimatePresence>

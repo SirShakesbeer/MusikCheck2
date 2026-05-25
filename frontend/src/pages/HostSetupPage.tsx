@@ -11,6 +11,7 @@ import {
   DEFAULT_PRESET_KEY,
   DEFAULT_TEAM_NAMES,
 } from '../config/defaults';
+import { useTranslation } from '../i18n/useTranslation';
 import { api } from '../services/api';
 import {
   buildFormValuesFromPreset,
@@ -33,7 +34,7 @@ import {
   type SourceType,
 } from '../services/mediaSourceController';
 import { connectLobbySocket } from '../services/ws';
-import type { GameModePresetState, GameState, RoundTypeDefinition, RoundTypeMetadata } from '../types';
+import type { GameModePresetState, GameState, LobbySourceState, RoundTypeDefinition, RoundTypeMetadata } from '../types';
 import { HomeButton } from '../components/HomeButton';
 
 type SetupTab = 'startscreen' | 'rules' | 'sources';
@@ -53,14 +54,31 @@ function normalizeSourceType(raw: string): SourceType {
   return 'local-folder';
 }
 
+function mapLobbySources(sources: LobbySourceState[]): LocalSource[] {
+  return sources.map((source) => ({
+    id: source.source_id,
+    type: normalizeSourceType(source.source_type),
+    value: source.source_value,
+    backendSourceId: source.source_id,
+    importedCount: source.imported_count,
+    addedByPlayerName: source.added_by_player_name ?? null,
+  }));
+}
+
+function normalizeStopWord(value: string | undefined): string {
+  return (value || '').trim();
+}
+
 export function HostSetupPage() {
   const navigate = useNavigate();
   const { code = '' } = useParams();
   const folderInputRef = useRef<HTMLInputElement | null>(null);
   const launchTransitionTimeoutRef = useRef<number | null>(null);
+  const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState<SetupTab>('startscreen');
 
   const [setupTeamNames, setSetupTeamNames] = useState<string[]>([...DEFAULT_TEAM_NAMES]);
+  const [setupTeamStopWords, setSetupTeamStopWords] = useState<Record<string, string>>({});
   const [newTeamName, setNewTeamName] = useState<string>('');
   const [localSources, setLocalSources] = useState<LocalSource[]>([]);
   const [newSourceType, setNewSourceType] = useState<SourceType>('local-folder');
@@ -97,7 +115,7 @@ export function HostSetupPage() {
     const message = err instanceof Error ? err.message : String(err);
     if (message.toLowerCase().includes('expired')) {
       setSessionExpired(true);
-      setError('This session has expired after 24 hours. Create a new lobby to continue.');
+      setError(t('hostSetup.sessionExpiredLong'));
       return;
     }
     setError(message);
@@ -110,7 +128,7 @@ export function HostSetupPage() {
   useEffect(() => {
     const lobbyCode = (state?.lobby_code || code || '').trim();
     if (!lobbyCode) return;
-    return connectLobbySocket(lobbyCode, setState);
+    return connectLobbySocket(lobbyCode, setState, (sources) => setLocalSources(mapLobbySources(sources)));
   }, [code, state?.lobby_code]);
 
   useEffect(() => {
@@ -148,19 +166,12 @@ export function HostSetupPage() {
 
           setState(stateResult.data);
           setSetupTeamNames(normalizeTeamNames(setupResult.data.teams));
+          setSetupTeamStopWords(setupResult.data.team_stop_words || {});
           setSelectedPresetKey(setupResult.data.preset_key || stateResult.data.mode_key || DEFAULT_PRESET_KEY);
           setModeDetailsTitle(setupResult.data.mode_title || stateResult.data.mode.name || DEFAULT_MODE_DETAILS_TITLE);
           setModeFormValues(buildFormValuesFromPreset(stateResult.data.mode, roundTypes));
           setSpotifyConnected(Boolean(setupResult.data.spotify_connected));
-          setLocalSources(
-            sourcesResult.data.map((source) => ({
-              id: source.source_id,
-              type: normalizeSourceType(source.source_type),
-              value: source.source_value,
-              backendSourceId: source.source_id,
-              importedCount: source.imported_count,
-            }))
-          );
+          setLocalSources(mapLobbySources(sourcesResult.data));
           setSessionExpired(false);
           setError(null);
         } finally {
@@ -200,12 +211,14 @@ export function HostSetupPage() {
       try {
         await api.saveLobbySetup(lobbyCode, {
           teams: teamNames,
+          team_stop_words: setupTeamStopWords,
           preset_key: selectedPresetKey,
           mode_title: modeDetailsTitle,
           mode_config: modeConfig,
           spotify_connected: spotifyConnected,
         });
-      } catch {
+      } catch (err) {
+        console.warn('Failed to autosave lobby setup', err);
       }
     }, 800);
 
@@ -220,6 +233,7 @@ export function HostSetupPage() {
     selectedPresetKey,
     sessionExpired,
     setupTeamNames,
+    setupTeamStopWords,
     spotifyConnected,
     state?.lobby_code,
   ]);
@@ -321,7 +335,8 @@ export function HostSetupPage() {
               popup.close();
             }
           }
-        } catch {
+        } catch (err) {
+          console.warn('Spotify status check failed', err);
         }
       }, 1500);
     } catch (err) {
@@ -412,13 +427,13 @@ export function HostSetupPage() {
       });
 
       if (!lobbyState?.lobby_code) {
-        throw new Error('Could not create lobby before starting the game.');
+        throw new Error(t('hostSetup.couldNotCreateLobby'));
       }
 
       const readiness = await api.validateLobbyStart(lobbyState.lobby_code);
       if (!readiness.data.ready) {
         const details = readiness.data.issues.join(' ');
-        throw new Error(details || 'Setup is incomplete. Please finish setup before starting the game.');
+        throw new Error(details || t('hostSetup.setupIncomplete'));
       }
 
       setState(lobbyState);
@@ -441,9 +456,9 @@ export function HostSetupPage() {
   const startGameDisabled = !hasTeams || (!runtimeTestMode && !hasAtLeastOneSource);
   let startGameHint: string | null = null;
   if (!hasTeams) {
-    startGameHint = 'Add at least one team name before starting.';
+    startGameHint = t('hostSetup.startGameHintTeams');
   } else if (!runtimeTestMode && !hasAtLeastOneSource) {
-    startGameHint = 'Add at least one media source or enable test mode before starting.';
+    startGameHint = t('hostSetup.startGameHintSources');
   }
 
   const addTeam = () => {
@@ -453,6 +468,10 @@ export function HostSetupPage() {
     }
     setSetupTeamNames((previous) => {
       const merged = normalizeTeamNames([...previous, nextName]);
+      setSetupTeamStopWords((current) => ({
+        ...current,
+        [nextName]: normalizeStopWord(current[nextName]),
+      }));
       return merged;
     });
     setNewTeamName('');
@@ -461,6 +480,11 @@ export function HostSetupPage() {
 
   const removeTeam = (teamName: string) => {
     setSetupTeamNames((previous) => previous.filter((name) => name.toLowerCase() !== teamName.toLowerCase()));
+    setSetupTeamStopWords((current) => {
+      const next = { ...current };
+      delete next[teamName];
+      return next;
+    });
     setError(null);
   };
 
@@ -468,10 +492,10 @@ export function HostSetupPage() {
     return (
       <main>
         <Card>
-          <h1 className="page-heading">Session Expired</h1>
-          <p className="danger-text">{error || 'This lobby is no longer available.'}</p>
+          <h1 className="page-heading">{t('hostSetup.sessionExpiredTitle')}</h1>
+          <p className="danger-text">{error || t('hostSetup.sessionExpiredMessage')}</p>
           <div className="source-row mt-3">
-            <Button onClick={() => navigate('/')}>Go To Home</Button>
+            <Button onClick={() => navigate('/')}>{t('hostSetup.goToHome')}</Button>
           </div>
         </Card>
       </main>
@@ -482,9 +506,9 @@ export function HostSetupPage() {
     <>
       <main className='setup-page'>
         <Card>
-          <StatusChip>Round Setup</StatusChip>
+          <StatusChip>{t('hostSetup.roundSetup')}</StatusChip>
           <div className='flex flex-row'>
-            <h1 className="page-heading mt-2">MusikCheck 2</h1>
+            <h1 className="page-heading mt-2">{t('hostSetup.title')}</h1>
             <div className="ml-auto">
               <HomeButton />
             </div>
@@ -500,7 +524,7 @@ export function HostSetupPage() {
               disabled={activeTab === 'startscreen'}
               variant={activeTab === 'startscreen' ? 'secondary' : 'ghost'}
             >
-              Game Mode
+              {t('hostSetup.gameMode')}
             </Button>
             <Button
               className="tab-header-btn"
@@ -508,7 +532,7 @@ export function HostSetupPage() {
               disabled={activeTab === 'rules'}
               variant={activeTab === 'rules' ? 'secondary' : 'ghost'}
             >
-              Rules
+              {t('hostSetup.rules')}
             </Button>
             <Button
               className="tab-header-btn"
@@ -516,7 +540,7 @@ export function HostSetupPage() {
               disabled={activeTab === 'sources'}
               variant={activeTab === 'sources' ? 'secondary' : 'ghost'}
             >
-              Sources And Players
+              {t('hostSetup.sourcesAndPlayers')}
             </Button>
           </div>
 
@@ -566,6 +590,7 @@ export function HostSetupPage() {
           {activeTab === 'sources' && (
             <SourcePlayerControlTab
               setupTeamNames={setupTeamNames}
+              setupTeamStopWords={setupTeamStopWords}
               newTeamName={newTeamName}
               spotifyConnected={spotifyConnected}
               spotifyAuthBusy={spotifyAuthBusy}
@@ -582,6 +607,12 @@ export function HostSetupPage() {
               folderInputRef={folderInputRef}
               onToggleRuntimeTestMode={onToggleRuntimeTestMode}
               onNewTeamNameChange={setNewTeamName}
+              onTeamStopWordChange={(teamName, stopWord) => {
+                setSetupTeamStopWords((current) => ({
+                  ...current,
+                  [teamName]: stopWord,
+                }));
+              }}
               onAddTeam={addTeam}
               onRemoveTeam={removeTeam}
               onSourceTypeChange={setNewSourceType}
@@ -614,8 +645,8 @@ export function HostSetupPage() {
               animate={{ y: 0, scale: 1, opacity: 1 }}
               transition={{ duration: 0.35, ease: 'easeOut' }}
             >
-              <p className="game-launch-title">Lights Up</p>
-              <p className="game-launch-subtitle">Moving from setup to the live game floor...</p>
+                <p className="game-launch-title">{t('hostSetup.lightsUp')}</p>
+                <p className="game-launch-subtitle">{t('hostSetup.movingToLive')}</p>
               <motion.div
                 className="game-launch-progress"
                 initial={{ scaleX: 0 }}

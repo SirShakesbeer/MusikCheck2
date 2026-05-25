@@ -26,6 +26,7 @@ export type RoundTypesMetadataEnvelope = {
 export type TeamState = {
   id: string;
   name: string;
+  stop_word: string;
   score: number;
 };
 
@@ -63,6 +64,10 @@ export type RoundState = {
   } | null;
   can_guess: boolean;
   status: string;
+  buzzer_player_id?: string | null;
+  buzzer_player_name?: string | null;
+  buzzer_team_id?: string | null;
+  buzzer_team_name?: string | null;
   playback_token: number;
   reveal_title?: string | null;
   reveal_artist?: string | null;
@@ -170,6 +175,7 @@ export type UpdateLobbyModePayload = {
 
 export type SaveLobbySetupPayload = {
   teams: string[];
+  team_stop_words?: Record<string, string>;
   preset_key?: string;
   mode_title?: string;
   mode_config?: GameModeConfig;
@@ -178,6 +184,7 @@ export type SaveLobbySetupPayload = {
 
 export type LobbySetupState = {
   teams: string[];
+  team_stop_words: Record<string, string>;
   preset_key: string;
   mode_title: string;
   spotify_connected: boolean;
@@ -188,6 +195,7 @@ export type LobbySourceState = {
   source_type: string;
   source_value: string;
   imported_count: number;
+  added_by_player_name?: string | null;
 };
 
 export type LobbyReadinessState = {

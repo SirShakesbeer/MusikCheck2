@@ -1,46 +1,59 @@
 import { FormEvent, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
-import { Button, Card, StatusChip } from '../components/ui';
+import { Button, Card, Field, StatusChip } from '../components/ui';
+import { DEFAULT_PLAYER_NAME } from '../config/defaults';
+import { useTranslation } from '../i18n/useTranslation';
+
+const PLAYER_NAME_STORAGE_KEY = 'musikcheck2.playerName';
 
 export function JoinPage() {
   const navigate = useNavigate();
+  const { t } = useTranslation();
   const [code, setCode] = useState<string>('');
+  const [playerName, setPlayerName] = useState<string>(DEFAULT_PLAYER_NAME);
 
   const onJoin = (event: FormEvent) => {
     event.preventDefault();
     const normalized = code.trim().toUpperCase();
-    if (!normalized) {
+    const trimmedPlayerName = playerName.trim();
+    if (!normalized || !trimmedPlayerName) {
       return;
     }
+    window.localStorage.setItem(PLAYER_NAME_STORAGE_KEY, trimmedPlayerName);
     navigate(`/player/${normalized}`);
   };
 
   return (
     <main>
       <Card>
-        <StatusChip>Player Entry</StatusChip>
-        <h1 className="page-heading mt-2">Join A Lobby</h1>
-        <p className="page-subheading">Enter the host code and jump straight into the round.</p>
+        <StatusChip>{t('join.status')}</StatusChip>
+        <h1 className="page-heading mt-2">{t('join.title')}</h1>
+        <p className="page-subheading">{t('join.subtitle')}</p>
 
         <form onSubmit={onJoin} className="source-row">
-          <input
-            value={code}
-            onChange={(event) => setCode(event.target.value)}
-            placeholder="Enter lobby code"
-            maxLength={8}
-            className="max-w-[240px]"
-          />
-          <Button type="submit" disabled={!code.trim()}>
-            Continue
+          <Field label={t('join.yourName')} className="min-w-0">
+            <input value={playerName} onChange={(event) => setPlayerName(event.target.value)} placeholder={t('join.playerNamePlaceholder')} />
+          </Field>
+          <Field label={t('join.lobbyCode')} className="min-w-0">
+            <input
+              value={code}
+              onChange={(event) => setCode(event.target.value)}
+              placeholder={t('join.lobbyCodePlaceholder')}
+              maxLength={8}
+              className="max-w-[240px]"
+            />
+          </Field>
+          <Button type="submit" disabled={!code.trim() || !playerName.trim()}>
+            {t('join.continue')}
           </Button>
         </form>
       </Card>
 
-      <Card title="Quick Tip">
-        <p className="muted-copy">Use the exact code shown on the host screen. Codes are case-insensitive.</p>
+      <Card title={t('join.quickTipTitle')}>
+        <p className="muted-copy">{t('join.quickTip')}</p>
         <div className="source-row mt-3">
-          <Button onClick={() => navigate('/')} variant="ghost">Back To Home</Button>
+          <Button onClick={() => navigate('/')} variant="ghost">{t('join.backToHome')}</Button>
         </div>
       </Card>
     </main>

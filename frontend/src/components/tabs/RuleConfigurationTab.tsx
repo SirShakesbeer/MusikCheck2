@@ -1,6 +1,7 @@
 import { ChangeEvent } from 'react';
 import { Slider } from 'antd';
 
+import { useTranslation } from '../../i18n/useTranslation';
 import { Button, Card, Field, StatusChip } from '../ui';
 import { RELEASE_YEAR_FILTER_DEFAULTS } from '../../config/defaults';
 import type { ModeFormValues } from '../../services/gameModeFormService';
@@ -35,6 +36,7 @@ export function RuleConfigurationTab({
   onSavePreset,
   onContinue,
 }: Props) {
+  const { t } = useTranslation();
   const releaseYearFrom = modeFormValues.releaseYearFrom
     ? Number.parseInt(modeFormValues.releaseYearFrom, 10)
     : RELEASE_YEAR_FILTER_DEFAULTS.from;
@@ -77,7 +79,7 @@ export function RuleConfigurationTab({
               <span>{roundType.label}</span>
             </label>
 
-            <span className="text-cyan-50/70">every</span>
+            <span className="text-cyan-50/70">{t('ruleConfiguration.every')}</span>
 
             <input
               type="number"
@@ -88,11 +90,11 @@ export function RuleConfigurationTab({
               className="w-24"
             />
 
-            <span className="text-cyan-50/70">rounds</span>
+            <span className="text-cyan-50/70">{t('ruleConfiguration.rounds')}</span>
           </div>
 
           <div className="text-xs uppercase tracking-wide text-cyan-50/70">
-            {roundType.requires_phone_connections ? 'Phones required' : 'Phones optional'}
+            {roundType.requires_phone_connections ? t('ruleConfiguration.phonesRequired') : t('ruleConfiguration.phonesOptional')}
           </div>
         </div>
 
@@ -167,7 +169,7 @@ export function RuleConfigurationTab({
 
         {roundRule.enabled && roundTypeMeta && roundTypeMeta.options.length === 0 && (
           <p className="mt-3 text-xs uppercase tracking-wide text-cyan-50/60">
-            No round-specific options yet.
+            {t('ruleConfiguration.noRoundSpecificOptions')}
           </p>
         )}
       </div>
@@ -188,21 +190,19 @@ export function RuleConfigurationTab({
   return (
     <div>
       <p>
-        {modeDetailsEditable
-        ? 'Configure round types and frequencies.'
-        : 'Preset settings are read-only. You can continue or pick another tab.'}
+        {modeDetailsEditable ? t('ruleConfiguration.configure') : t('ruleConfiguration.readOnly')}
       </p>
 
       {availableRoundTypes.length > 0 ? (
         <div className="space-y-3">{roundTypeRows}</div>
       ) : (
         <Card>
-          <p className="muted-copy">Loading available round types...</p>
+          <p className="muted-copy">{t('ruleConfiguration.loadingRoundTypes')}</p>
         </Card>
       )}
 
       <div className="mt-4 grid gap-3 md:grid-cols-3">
-        <Field label="Bonus (artist + title)">
+        <Field label={t('ruleConfiguration.bonusArtistTitle')}>
           <input
             type="number"
             min={0}
@@ -211,7 +211,7 @@ export function RuleConfigurationTab({
             onChange={(event: ChangeEvent<HTMLInputElement>) => onFieldChange('bothBonusPoints', event.target.value)}
           />
         </Field>
-        <Field label="Wrong guess penalty">
+        <Field label={t('ruleConfiguration.wrongGuessPenalty')}>
           <input
             type="number"
             min={0}
@@ -223,14 +223,14 @@ export function RuleConfigurationTab({
       </div>
 
       <div className="mt-4 border-t border-white/10 pt-4">
-        <p className="mb-3 text-xs uppercase tracking-wide text-cyan-50/70">General settings</p>
+        <p className="mb-3 text-xs uppercase tracking-wide text-cyan-50/70">{t('ruleConfiguration.generalSettings')}</p>
 
-        <Field label="Release year window">
+        <Field label={t('ruleConfiguration.releaseYearWindow')}>
           <div className="space-y-4">
             <div className="relative pt-8">
               <div className="absolute left-0 right-0 top-0 flex items-center justify-between text-xs uppercase tracking-wide text-cyan-50/80">
-                <span>{displayReleaseYearFrom}</span>
-                <span>{displayReleaseYearTo}</span>
+                <span>{displayReleaseYearFrom || t('ruleConfiguration.any')}</span>
+                <span>{displayReleaseYearTo || t('ruleConfiguration.any')}</span>
               </div>
               <Slider
                 range
@@ -248,13 +248,13 @@ export function RuleConfigurationTab({
               </div>
             </div>
             <p className="muted-copy text-sm">
-              Drag both handles to set the window. The filter is inclusive, and tracks without a known year are skipped when a window is set.
+              {t('ruleConfiguration.releaseYearHint')}
             </p>
           </div>
         </Field>
 
         <div className="mt-4 grid gap-3 md:grid-cols-2">
-          <Field label="Required points to win">
+          <Field label={t('ruleConfiguration.requiredPointsToWin')}>
             <input
               type="number"
               min={1}
@@ -267,24 +267,24 @@ export function RuleConfigurationTab({
       </div>
 
       {requiredPhoneRoundTypes.length > 0 && (
-        <StatusChip>Round type {requiredPhoneRoundTypes.join(', ')} requires phones to be connected.</StatusChip>
+        <StatusChip>{t('ruleConfiguration.roundTypePhonesRequired', { roundTypes: requiredPhoneRoundTypes.join(', ') })}</StatusChip>
       )}
 
       {modeDetailsEditable && (
         <>
-          <Field label="Preset name">
+          <Field label={t('ruleConfiguration.presetName')}>
             <input
               value={newPresetName}
               onChange={(event: ChangeEvent<HTMLInputElement>) => onNewPresetNameChange(event.target.value)}
-              placeholder="My custom mode"
+              placeholder={t('ruleConfiguration.myCustomMode')}
             />
           </Field>
-          <Button onClick={onSavePreset} disabled={!newPresetName.trim()}>Save Preset</Button>
+          <Button onClick={onSavePreset} disabled={!newPresetName.trim()}>{t('ruleConfiguration.savePreset')}</Button>
         </>
       )}
 
       <div className="mt-3">
-        <Button onClick={onContinue} variant="secondary">Continue to Sources And Players</Button>
+        <Button onClick={onContinue} variant="secondary">{t('ruleConfiguration.continueToSourcesAndPlayers')}</Button>
       </div>
     </div>
   );

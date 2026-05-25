@@ -29,8 +29,8 @@
     }
   },
   {
-    "key": "mixed_media",
-    "name": "Mixed Media",
+    "key": "videos_only",
+    "name": "Videos Only",
     "stage_durations": [
       1,
       2,
@@ -46,18 +46,8 @@
     "required_points_to_win": 42,
     "round_rules": [
       {
-        "kind": "audio",
-        "every_n_songs": 1,
-        "options": {}
-      },
-      {
         "kind": "video",
-        "every_n_songs": 4,
-        "options": {}
-      },
-      {
-        "kind": "lyrics",
-        "every_n_songs": 6,
+        "every_n_songs": 1,
         "options": {}
       }
     ],

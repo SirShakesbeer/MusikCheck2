@@ -8,17 +8,23 @@ import { HostSetupPage } from './pages/HostSetupPage';
 import { HomePage } from './pages/HomePage';
 import { JoinPage } from './pages/JoinPage';
 import { PlayerPage } from './pages/PlayerPage';
+import { useTranslation } from './i18n/useTranslation';
 import { useThemeStore } from './stores/themeStore';
 import { useUiPreferencesStore } from './stores/uiPreferencesStore';
 
 export default function App() {
   const hydrateTheme = useThemeStore((store) => store.hydrateTheme);
   const hydratePreferences = useUiPreferencesStore((store) => store.hydratePreferences);
+  const { t } = useTranslation();
 
   useEffect(() => {
     hydrateTheme();
     hydratePreferences();
   }, [hydrateTheme, hydratePreferences]);
+
+  useEffect(() => {
+    document.title = t('app.title');
+  }, [t]);
 
   return (
     <>

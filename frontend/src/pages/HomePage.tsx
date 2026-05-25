@@ -3,10 +3,12 @@ import { useNavigate } from 'react-router-dom';
 
 import { Button, Card, StatusChip } from '../components/ui';
 import { DEFAULT_PRESET_KEY, DEFAULT_TEAM_NAMES } from '../config/defaults';
+import { useTranslation } from '../i18n/useTranslation';
 import { api } from '../services/api';
 
 export function HomePage() {
   const navigate = useNavigate();
+  const { t } = useTranslation();
   const [busy, setBusy] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -29,26 +31,26 @@ export function HomePage() {
   return (
     <main className='home-page'>
       <Card>
-        <h1 className="page-heading mt-2">MusikCheck 2</h1>
-        <p className="page-subheading">The classic Thomasius music quiz with a modern twist.</p>
+        <h1 className="page-heading mt-2">{t('home.title')}</h1>
+        <p className="page-subheading">{t('home.subtitle')}</p>
       </Card>
 
-      <Card title="Choose Your Role" subtitle="Hosts configure rounds and scoring. Players join with a lobby code and can interact with their phone.">
+      <Card title={t('home.chooseRoleTitle')} subtitle={t('home.chooseRoleSubtitle')}>
         <div className="source-row">
           <Button onClick={onHost} disabled={busy}>
-            {busy ? 'Creating Lobby...' : 'Host Game'}
+            {busy ? t('home.creatingLobby') : t('home.hostGame')}
           </Button>
           <Button onClick={() => navigate('/join')} disabled={busy} variant="ghost">
-            Join With Code
+            {t('home.joinWithCode')}
           </Button>
         </div>
       </Card>
 
-      <Card title="How It Flows">
+      <Card title={t('home.flowTitle')}>
         <div className="source-list">
-          <p className="muted-copy">1. Host sets teams, game mode, and music sources.</p>
-          <p className="muted-copy">2. (OPTIONAL) Players join from phones and set ready.</p>
-          <p className="muted-copy">3. Round snippets play, teams race to guess title and artist.</p>
+          <p className="muted-copy">{t('home.flowStep1')}</p>
+          <p className="muted-copy">{t('home.flowStep2')}</p>
+          <p className="muted-copy">{t('home.flowStep3')}</p>
         </div>
       </Card>
 

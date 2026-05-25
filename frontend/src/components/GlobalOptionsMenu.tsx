@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 
+import { LANGUAGE_LABELS, type Language } from '../i18n/translations';
+import { useTranslation } from '../i18n/useTranslation';
 import { api } from '../services/api';
 import { useUiPreferencesStore, type BackgroundMode } from '../stores/uiPreferencesStore';
 import { ThemeSelector } from './ThemeSwitcher';
@@ -19,6 +21,7 @@ export function GlobalOptionsMenu() {
   const triggerRef = useRef<HTMLButtonElement | null>(null);
 
   const location = useLocation();
+  const { language, setLanguage, t } = useTranslation();
   const backgroundMode = useUiPreferencesStore((store) => store.backgroundMode);
   const setBackgroundMode = useUiPreferencesStore((store) => store.setBackgroundMode);
 
@@ -29,7 +32,8 @@ export function GlobalOptionsMenu() {
       try {
         const status = await api.getSpotifyStatus();
         setSpotifyConnected(Boolean(status.data.connected));
-      } catch {
+      } catch (err) {
+        console.warn('Failed to load Spotify status', err);
       }
     };
 
@@ -92,7 +96,8 @@ export function GlobalOptionsMenu() {
           if (!popup.closed) {
             popup.close();
           }
-        } catch {
+        } catch (err) {
+          console.warn('Spotify connection polling failed', err);
         }
       }, 1500);
     } catch (err) {
@@ -110,7 +115,7 @@ export function GlobalOptionsMenu() {
         size="sm"
         onClick={() => setOpen(true)}
       >
-        Options
+        {t('options.button')}
       </Button>
 
       {open && (
@@ -118,40 +123,55 @@ export function GlobalOptionsMenu() {
           className="options-overlay"
           role="dialog"
           aria-modal="true"
-          aria-label="Global options"
+          aria-label={t('options.title')}
           onClick={() => setOpen(false)}
         >
-          <Card title="Options" tone="panel" className="options-modal-card" onClick={(event) => event.stopPropagation()}>
+          <Card title={t('options.title')} tone="panel" className="options-modal-card" onClick={(event) => event.stopPropagation()}>
             <div className="options-section mb-3">
-              <p className="options-section-title">Style</p>
-              <ThemeSelector className="options-theme-selector" label="Theme" selectClassName="options-theme-select" />
+              <p className="options-section-title">{t('options.style')}</p>
+              <ThemeSelector className="options-theme-selector" label={t('theme.label')} selectClassName="options-theme-select" />
             </div>
 
             <div className="options-section mb-3">
-              <p className="options-section-title">Background</p>
+              <p className="options-section-title">{t('options.background')}</p>
               <div className="theme-selector-group options-theme-selector">
-                <span className="text-xs font-semibold uppercase tracking-wide text-cyan-50">Mode</span>
+                <span className="text-xs font-semibold uppercase tracking-wide text-cyan-50">{t('options.mode')}</span>
                 <select
                   className="options-theme-select"
                   value={backgroundMode}
                   onChange={(event) => setBackgroundMode(event.target.value as BackgroundMode)}
                 >
-                  <option value="flat">Flat Gradient</option>
-                  <option value="room-3d">3D Room</option>
+                  <option value="flat">{t('options.flatGradient')}</option>
+                  <option value="room-3d">{t('options.room3D')}</option>
                 </select>
               </div>
             </div>
 
             <div className="options-section mb-3">
-              <p className="options-section-title">Integrations</p>
+              <p className="options-section-title">{t('options.language')}</p>
+              <div className="theme-selector-group options-theme-selector">
+                <span className="text-xs font-semibold uppercase tracking-wide text-cyan-50">{t('options.language')}</span>
+                <select
+                  className="options-theme-select"
+                  value={language}
+                  onChange={(event) => setLanguage(event.target.value as Language)}
+                >
+                  <option value="en">{LANGUAGE_LABELS.en}</option>
+                  <option value="de">{LANGUAGE_LABELS.de}</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="options-section mb-3">
+              <p className="options-section-title">{t('options.integrations')}</p>
               <div className="source-row-mobile mb-2">
                 <StatusChip tone={spotifyConnected ? 'ok' : 'warn'}>
-                  Spotify {spotifyConnected ? 'Connected' : 'Not connected'}
+                  Spotify {spotifyConnected ? t('options.spotifyConnected') : t('options.spotifyNotConnected')}
                 </StatusChip>
               </div>
               <div className="host-actions-grid">
                 <Button onClick={connectSpotify} disabled={spotifyAuthBusy}>
-                  {spotifyAuthBusy ? 'Connecting Spotify...' : (spotifyConnected ? 'Reconnect Spotify' : 'Connect Spotify')}
+                  {spotifyAuthBusy ? t('options.connectingSpotify') : (spotifyConnected ? t('options.reconnectSpotify') : t('options.connectSpotify'))}
                 </Button>
               </div>
             </div>
@@ -159,7 +179,7 @@ export function GlobalOptionsMenu() {
             {error && <p className="danger-text mb-3">{error}</p>}
 
             <div className="host-actions-grid">
-              <Button variant="ghost" onClick={() => setOpen(false)}>Close</Button>
+              <Button variant="ghost" onClick={() => setOpen(false)}>{t('options.close')}</Button>
             </div>
           </Card>
         </div>
