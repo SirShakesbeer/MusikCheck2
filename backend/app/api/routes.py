@@ -71,6 +71,7 @@ from app.services.service_container import (
     media_ingestion_service,
     media_library_service,
     spotify_oauth_service,
+    media_extraction_service,
 )
 
 router = APIRouter()
@@ -480,6 +481,11 @@ def list_indexed_tracks(source_ids: str | None = None, limit: int = 500, db: Ses
             title=track.title,
             artist=track.artist,
             release_year=track.release_year,
+            extraction_status=track.extraction_status,
+            extraction_asset_hash=track.extraction_asset_hash,
+            extraction_frame_path=track.extraction_frame_path,
+            extraction_clip_path=track.extraction_clip_path,
+            extraction_error=track.extraction_error,
             playback_url=(
                 f"/api/media/tracks/{track.id}/stream"
                 if source.provider_key in {"local_folder", "local_files"}
@@ -512,6 +518,25 @@ def stream_indexed_track(track_id: str, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail="Streaming currently supported only for local tracks")
 
     return FileResponse(path=track.file_path)
+
+
+@router.get("/media/snippets/{cache_key}")
+def serve_snippet(cache_key: str):
+    """Serve a cached snippet asset (image/video/audio) by cache key."""
+    asset_path = media_extraction_service.resolve_cached_asset_path(cache_key)
+    if not asset_path:
+        raise HTTPException(status_code=404, detail="Snippet not found")
+
+    return FileResponse(path=str(asset_path))
+
+
+@router.get("/media/snippets/{cache_key}")
+def stream_cached_snippet(cache_key: str):
+    snippet_path = media_processing_service.get_cached_snippet_path(cache_key)
+    if not snippet_path:
+        raise HTTPException(status_code=404, detail="Snippet not found")
+
+    return FileResponse(path=snippet_path)
 
 
 @router.post("/lobbies", response_model=ApiEnvelope)

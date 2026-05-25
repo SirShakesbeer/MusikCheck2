@@ -33,3 +33,5 @@ backend/**/*.pyc
 backend/dev.db
 */.env
 backend/.env
+
+backend/media/

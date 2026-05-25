@@ -1,7 +1,10 @@
 import re
 from pathlib import Path
 
-from mutagen import File as MutagenFile
+try:
+    from mutagen import File as MutagenFile
+except ImportError:  # pragma: no cover - runtime fallback when mutagen is unavailable
+    MutagenFile = None
 
 from app.domain.providers.base import MediaItem, MediaProvider
 
@@ -22,6 +25,9 @@ def _title_artist_from_filename(stem: str) -> tuple[str, str]:
 
 
 def _release_year_from_audio_file(path: Path) -> int | None:
+    if MutagenFile is None:
+        return None
+
     try:
         audio_file = MutagenFile(path)
     except Exception:

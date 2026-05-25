@@ -1,3 +1,26 @@
+## FFmpeg extraction
+
+Local media indexing now supports a modular FFmpeg-backed extraction flow. The backend will boot even if Mutagen is unavailable in the active interpreter, and local tracks fall back cleanly when extraction cannot be built.
+
+Relevant settings:
+
+- `FFMPEG_BINARY`
+- `FFMPEG_AUDIO_CODEC`
+- `FFMPEG_AUDIO_BITRATE`
+- `FFMPEG_TIMEOUT_SECONDS`
+- `FFMPEG_MAX_WORKERS`
+- `EXTRACTION_ENABLED`
+- `YTDLP_JS_RUNTIME` (e.g. `node`)
+- `YTDLP_JS_RUNTIMES`
+- `YTDLP_JS_RUNTIME_PATH`
+
+Batch refresh for an existing local library:
+
+```bash
+python backend/scripts/index_local_library.py "C:\\Music\\Library" --refresh-extractions
+```
+
+The indexed track API now carries extraction status and asset metadata, and the app’s periodic cleanup also removes stale cached snippet files.
 # MusikCheck2
 
 Web-based multiplayer music quiz prototype with a backend-driven game state, lobby-based persistence, and real-time host/player synchronization.

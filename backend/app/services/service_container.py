@@ -4,6 +4,7 @@ from app.domain.providers.text_list_provider import TextListProvider
 from app.domain.providers.youtube_provider import YouTubePlaylistProvider
 from app.services.game_engine import GameEngine
 from app.services.game_mode_service import GameModeService
+from app.services.media_extraction_service import MediaExtractionService
 from app.services.media_library_service import MediaLibraryService
 from app.services.media_ingestion_service import MediaIngestionService
 from app.services.media_processing_service import MediaProcessingService
@@ -18,8 +19,9 @@ media_ingestion_service = MediaIngestionService(
         SpotifyPlaylistProvider(),
     ]
 )
-media_processing_service = MediaProcessingService()
-media_library_service = MediaLibraryService()
+media_extraction_service = MediaExtractionService()
+media_processing_service = MediaProcessingService(snippet_extraction_service=media_extraction_service)
+media_library_service = MediaLibraryService(extraction_service=media_extraction_service)
 spotify_oauth_service = SpotifyOAuthService()
 game_mode_service = GameModeService()
 game_engine = GameEngine(

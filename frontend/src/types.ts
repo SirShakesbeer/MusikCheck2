@@ -78,6 +78,7 @@ export type RoundTeamState = {
   title_awarded_stage?: number | null;
   artist_remove_locked?: boolean;
   title_remove_locked?: boolean;
+  wrong_guess_penalty_applied?: boolean;
 };
 
 export type GameState = {

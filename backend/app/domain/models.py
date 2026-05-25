@@ -107,6 +107,7 @@ class ActiveRoundTeamState(Base):
     bonus_points: Mapped[int] = mapped_column(Integer, default=0)
     artist_awarded_stage: Mapped[int] = mapped_column(Integer, nullable=True, default=None)
     title_awarded_stage: Mapped[int] = mapped_column(Integer, nullable=True, default=None)
+    wrong_guess_penalty_applied: Mapped[bool] = mapped_column(Boolean, default=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
@@ -147,6 +148,12 @@ class IndexedTrack(Base):
     release_year: Mapped[int | None] = mapped_column(Integer, nullable=True)
     file_mtime: Mapped[int] = mapped_column(Integer)
     file_size: Mapped[int] = mapped_column(Integer)
+    extraction_status: Mapped[str] = mapped_column(String(32), default="pending")
+    extraction_asset_hash: Mapped[str] = mapped_column(String(64), default="")
+    extraction_frame_path: Mapped[str] = mapped_column(String(2048), default="")
+    extraction_clip_path: Mapped[str] = mapped_column(String(2048), default="")
+    extraction_error: Mapped[str] = mapped_column(String(1024), default="")
+    extraction_updated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

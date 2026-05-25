@@ -6,6 +6,7 @@ import { Button, StatusChip } from './ui';
 type Props = {
   teams: TeamState[];
   roundStates: Record<string, RoundTeamState>;
+  roundFinished: boolean;
   maxPoints: number;
   winnerTeamIds: Set<string>;
   hasWinnerLock: boolean;
@@ -20,6 +21,7 @@ function clamp(value: number, min: number, max: number): number {
 export function TeamProgressBoard({
   teams,
   roundStates,
+  roundFinished,
   maxPoints,
   winnerTeamIds,
   hasWinnerLock,
@@ -52,11 +54,13 @@ export function TeamProgressBoard({
         const teamState = roundStates[team.id];
         const artistSelected = (teamState?.artist_points ?? 0) > 0;
         const titleSelected = (teamState?.title_points ?? 0) > 0;
-        const disableArtistToggle = hasWinnerLock && !artistSelected;
-        const disableTitleToggle = hasWinnerLock && !titleSelected;
+        const penaltyApplied = Boolean(teamState?.wrong_guess_penalty_applied);
+        const disablePenalty = !roundFinished || penaltyApplied;
+        const disableArtistToggle = roundFinished ? !artistSelected || !penaltyApplied : hasWinnerLock && !artistSelected;
+        const disableTitleToggle = roundFinished ? !titleSelected || !penaltyApplied : hasWinnerLock && !titleSelected;
 
         const progress = clamp(team.score / safeMaxPoints, 0, 1);
-        const leftPercent = 8 + progress * 84;
+        const leftPercent = 12 + progress * 76;
 
         const style = {
           left: `${leftPercent}%`,
@@ -99,10 +103,14 @@ export function TeamProgressBoard({
                 >
                   Toggle Title
                 </Button>
-                <Button onClick={() => onPenalty(team.id)} variant="danger" size="sm">
-                  Wrong Guess Penalty
+                <Button onClick={() => onPenalty(team.id)} disabled={disablePenalty} variant="danger" size="sm">
+                  {penaltyApplied ? 'Penalty Applied' : 'Wrong Guess Penalty'}
                 </Button>
               </div>
+
+              {roundFinished && !penaltyApplied && (
+                <p className="muted-copy mt-2">Reveal first, then apply penalty before removing points.</p>
+              )}
             </article>
           </div>
         );

@@ -106,6 +106,14 @@ class VideoPlaybackState(BaseModel):
     clip_duration_seconds: int | None = None
 
 
+class ExtractionAssetState(BaseModel):
+    asset_hash: str
+    frame_path: str | None = None
+    clip_path: str | None = None
+    status: str = "pending"
+    error: str | None = None
+
+
 class RoundState(BaseModel):
     round_kind: str
     song_number: int
@@ -120,6 +128,7 @@ class RoundState(BaseModel):
     snippet_start_offsets: list[int]
     stage_playback: StagePlaybackState
     video_playback: VideoPlaybackState | None = None
+    extraction_assets: ExtractionAssetState | None = None
     can_guess: bool
     status: str
     playback_token: int = 0
@@ -135,6 +144,7 @@ class RoundTeamState(BaseModel):
     bonus_points: int
     artist_awarded_stage: int | None = None
     title_awarded_stage: int | None = None
+    wrong_guess_penalty_applied: bool = False
     artist_remove_locked: bool = False
     title_remove_locked: bool = False
 

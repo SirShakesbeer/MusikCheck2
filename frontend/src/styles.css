@@ -306,19 +306,19 @@
   }
 
   .team-progress-board {
-    @apply grid h-full min-h-0;
+    @apply grid h-full min-h-0 px-2 py-1 sm:px-3;
     grid-template-rows: repeat(var(--team-count, 1), minmax(0, 1fr));
-    row-gap: 0.45rem;
+    row-gap: 0.35rem;
     align-items: center;
   }
 
   .team-progress-lane {
-    @apply relative min-h-0;
+    @apply relative min-h-0 overflow-visible;
   }
 
   .team-paper-card {
     --paper-tilt: -0.6deg;
-    @apply paper-card absolute top-1/2 w-[90vw] max-w-[460px] rounded-2xl border border-white/20 bg-mc-surface/90 p-3 shadow-card;
+    @apply paper-card absolute top-1/2 w-[clamp(180px,34vw,300px)] max-w-[300px] rounded-2xl border border-white/20 bg-mc-surface/90 p-2.5 shadow-card sm:w-[clamp(200px,28vw,340px)] sm:max-w-[340px] sm:p-3;
     animation: teamCardFloat 4.4s ease-in-out infinite;
   }
 

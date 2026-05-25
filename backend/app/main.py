@@ -1,4 +1,5 @@
 import asyncio
+import logging
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
@@ -8,9 +9,10 @@ from app.api.routes import router
 from app.core.config import settings
 from app.core.database import Base, SessionLocal, apply_schema_patches, engine
 from app.core.ws_manager import ws_manager
-from app.services.service_container import game_engine
+from app.services.service_container import game_engine, media_extraction_service
 
 app = FastAPI(title=settings.app_name)
+logger = logging.getLogger(__name__)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -27,7 +29,15 @@ async def run_periodic_cleanup() -> None:
     while True:
         try:
             with SessionLocal() as db:
-                game_engine.cleanup_expired_lobbies_and_orphan_links(db)
+                cleanup_summary = game_engine.cleanup_expired_lobbies_and_orphan_links(db)
+                removed_snippets = media_extraction_service.cleanup_stale_snippets()
+                logger.info(
+                    "Cleanup summary: lobbies=%s links=%s rounds=%s snippets=%s",
+                    cleanup_summary.get("deleted_lobbies", 0),
+                    cleanup_summary.get("deleted_links", 0),
+                    cleanup_summary.get("deleted_round_team_rows", 0),
+                    removed_snippets,
+                )
         except Exception:
             # Cleanup is best-effort and should never crash the app loop.
             pass
@@ -45,7 +55,13 @@ async def startup() -> None:
             Base.metadata.create_all(bind=engine)
             apply_schema_patches()
             with SessionLocal() as db:
-                game_engine.cleanup_expired_lobbies_and_orphan_links(db)
+                cleanup_summary = game_engine.cleanup_expired_lobbies_and_orphan_links(db)
+                logger.info(
+                    "Startup cleanup summary: lobbies=%s links=%s rounds=%s",
+                    cleanup_summary.get("deleted_lobbies", 0),
+                    cleanup_summary.get("deleted_links", 0),
+                    cleanup_summary.get("deleted_round_team_rows", 0),
+                )
 
             global cleanup_task
             cleanup_task = asyncio.create_task(run_periodic_cleanup())

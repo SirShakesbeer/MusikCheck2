@@ -25,7 +25,7 @@ from app.domain.snippets import SnippetSpec
 from app.domain.providers.base import MediaItem
 from app.domain.round_source_resolver import DefaultRoundTypeSourceResolver, RoundTypeSourceResolver
 from app.schemas.game_mode import GameModeFiltersState, GameModePresetState, RoundTypeRuleState
-from app.schemas.game import GameState, PlayerState, RoundState, RoundTeamState, TeamState
+from app.schemas.game import ExtractionAssetState, GameState, PlayerState, RoundState, RoundTeamState, TeamState
 from app.schemas.game import FinishGameStatsState, TeamFinishStatsState
 from app.services.game_mode_service import GameModePreset, GameModeService, RoundTypeRule
 from app.services.media_processing_service import MediaProcessingService
@@ -444,7 +444,9 @@ class GameEngine:
         offsets: list[int] = []
         for duration in stage_durations:
             max_start = max(0, track_duration_seconds - max(1, duration))
-            offsets.append(random.randint(0, max_start) if max_start > 0 else 0)
+            # Start at least 15s in to avoid black frames or silent video intros, unless the video is short
+            min_start = min(15, max_start)
+            offsets.append(random.randint(min_start, max_start) if max_start > 0 else 0)
         return offsets
 
     def _normalize_playback_ref(self, provider_key: str, media_path: str) -> str:
@@ -504,7 +506,7 @@ class GameEngine:
             source = db.query(MediaSource).filter(MediaSource.id == indexed_track.source_id).first()
             if source:
                 provider_key = source.provider_key
-                if source.provider_key == "spotify_playlist" and indexed_track.file_size > 0:
+                if source.provider_key in {"spotify_playlist", "youtube_playlist"} and indexed_track.file_size > 0:
                     track_duration_seconds = max(1, indexed_track.file_size // 1000)
                 playback_ref = self._normalize_playback_ref(source.provider_key, media_item.media_path)
 
@@ -538,15 +540,43 @@ class GameEngine:
         if not video_id:
             return None
 
-        track_duration = max(1, int(runtime.track_duration_seconds or 1))
         stage_index = max(0, int(runtime.stage_index))
+        media_item = MediaItem(
+            source_id=runtime.media_source_id,
+            title=runtime.media_title,
+            artist=runtime.media_artist,
+            media_path=runtime.media_path,
+        )
         round_rule_lookup = getattr(self.mode_service, "get_round_rule", None)
         if callable(round_rule_lookup):
             round_rule = round_rule_lookup(mode, "video")
         else:
             round_rule = next((rule for rule in mode.round_rules if str(rule.kind).strip().lower() == "video"), None)
         options = round_rule.options if round_rule and isinstance(round_rule.options, dict) else {}
-        # Prefer higher quality thumbnails where available.
+        frame_count = 4
+        if stage_index == 1:
+            try:
+                frame_count = int(options.get("snippet2FrameCount", 4))
+            except (TypeError, ValueError):
+                frame_count = 4
+
+        track_duration = max(1, int(runtime.track_duration_seconds or 1))
+
+        playback = self.media_processing.build_video_round_playback(
+            media_item=media_item,
+            stage_index=stage_index,
+            stage_duration=stage_duration,
+            start_at_seconds=start_at_seconds,
+            song_number=runtime.song_number,
+            track_duration_seconds=track_duration,
+            frame_count=frame_count,
+        )
+        if playback:
+            if stage_index == 1 and playback.get("mode") == "frame_loop":
+                playback["frame_duration_ms"] = VIDEO_SNIPPET2_FRAME_DURATION_MS
+            return playback
+
+        # Fallback to the old YouTube embed / thumbnail path if FFmpeg extraction cannot be created.
         stage1_variants = ["maxresdefault.jpg", "sddefault.jpg", "hqdefault.jpg", "mqdefault.jpg", "0.jpg"]
         stage2_variants = ["hq1.jpg", "hq2.jpg", "hq3.jpg", "1.jpg", "2.jpg", "3.jpg"]
 
@@ -605,6 +635,27 @@ class GameEngine:
             "clip_start_seconds": clip_start,
             "clip_duration_seconds": clip_duration,
         }
+
+    def _resolve_extraction_assets(self, db: Session, runtime: ActiveRoundState) -> ExtractionAssetState | None:
+        track = (
+            db.query(IndexedTrack)
+            .filter(IndexedTrack.id == runtime.media_source_id)
+            .first()
+        )
+        if not track:
+            return None
+
+        asset_hash = (track.extraction_asset_hash or "").strip()
+        if not asset_hash and not (track.extraction_frame_path or track.extraction_clip_path):
+            return None
+
+        return ExtractionAssetState(
+            asset_hash=asset_hash,
+            frame_path=track.extraction_frame_path or None,
+            clip_path=track.extraction_clip_path or None,
+            status=track.extraction_status or "pending",
+            error=track.extraction_error or None,
+        )
 
     def _deserialize_offsets(self, raw: str | None, expected_count: int) -> list[int]:
         if not raw:
@@ -973,7 +1024,7 @@ class GameEngine:
         elif provider_key == "spotify_playlist":
             media_path = f"https://open.spotify.com/track/{track.file_path}"
         elif provider_key in {"local_folder", "local_files"}:
-            media_path = f"/api/media/tracks/{track.id}/stream"
+            media_path = track.file_path
 
         if not media_path:
             raise ValueError("No playable media URL available for selected track")
@@ -1049,7 +1100,7 @@ class GameEngine:
             raise ValueError("Team not found")
 
         round_state = self._get_active_round(db, lobby.id)
-        if not round_state or round_state.status == "finished":
+        if not round_state:
             raise ValueError("No active round")
 
         normalized_fact = fact.strip().lower()
@@ -1081,6 +1132,7 @@ class GameEngine:
         current_bonus = int(team_round_state.bonus_points)
         artist_awarded_stage = team_round_state.artist_awarded_stage
         title_awarded_stage = team_round_state.title_awarded_stage
+        penalty_applied = bool(getattr(team_round_state, "wrong_guess_penalty_applied", False))
 
         if normalized_fact == "artist":
             selected_points = current_artist
@@ -1097,7 +1149,11 @@ class GameEngine:
         has_winner_lock = self._has_winner_lock(teams, mode)
 
         delta = 0
-        if selected_points > 0:
+        if round_state.status == "finished":
+            if selected_points <= 0:
+                raise ValueError("Apply penalty first, then remove points already awarded this round.")
+            if not penalty_applied:
+                raise ValueError("Apply penalty first before removing points already awarded this round.")
             if awarded_stage is not None and max_stage_reached > int(awarded_stage):
                 raise ValueError("Cannot remove this fact after a higher snippet stage has been played")
             delta -= selected_points
@@ -1112,20 +1168,35 @@ class GameEngine:
                 delta -= current_bonus
                 team_round_state.bonus_points = 0
         else:
-            if has_winner_lock:
-                raise ValueError("Winner reached max points. Reveal and validate, or remove points before continuing.")
+            if selected_points > 0:
+                if awarded_stage is not None and max_stage_reached > int(awarded_stage):
+                    raise ValueError("Cannot remove this fact after a higher snippet stage has been played")
+                delta -= selected_points
+                if normalized_fact == "artist":
+                    team_round_state.artist_points = 0
+                    team_round_state.artist_awarded_stage = None
+                else:
+                    team_round_state.title_points = 0
+                    team_round_state.title_awarded_stage = None
 
-            delta += fact_points
-            if normalized_fact == "artist":
-                team_round_state.artist_points = fact_points
-                team_round_state.artist_awarded_stage = max_stage_reached
+                if current_bonus > 0:
+                    delta -= current_bonus
+                    team_round_state.bonus_points = 0
             else:
-                team_round_state.title_points = fact_points
-                team_round_state.title_awarded_stage = max_stage_reached
+                if has_winner_lock:
+                    raise ValueError("Winner reached max points. Reveal and validate, or remove points before continuing.")
 
-            if other_selected_points > 0 and current_bonus < 1 and both_bonus > 0:
-                delta += both_bonus
-                team_round_state.bonus_points = both_bonus
+                delta += fact_points
+                if normalized_fact == "artist":
+                    team_round_state.artist_points = fact_points
+                    team_round_state.artist_awarded_stage = max_stage_reached
+                else:
+                    team_round_state.title_points = fact_points
+                    team_round_state.title_awarded_stage = max_stage_reached
+
+                if other_selected_points > 0 and current_bonus < 1 and both_bonus > 0:
+                    delta += both_bonus
+                    team_round_state.bonus_points = both_bonus
 
         if delta != 0:
             team.score = max(0, team.score + delta)
@@ -1138,12 +1209,37 @@ class GameEngine:
         if not team:
             raise ValueError("Team not found")
 
+        round_state = self._get_active_round(db, lobby.id)
+        if not round_state:
+            raise ValueError("No active round")
+        if round_state.status != "finished":
+            raise ValueError("Reveal the round before applying a penalty")
+
+        team_round_state = (
+            db.query(ActiveRoundTeamState)
+            .filter(
+                ActiveRoundTeamState.active_round_id == round_state.id,
+                ActiveRoundTeamState.team_id == team.id,
+            )
+            .first()
+        )
+        if not team_round_state:
+            team_round_state = ActiveRoundTeamState(active_round_id=round_state.id, team_id=team.id)
+            db.add(team_round_state)
+            db.flush()
+
+        if team_round_state.wrong_guess_penalty_applied:
+            raise ValueError("Penalty already applied for this round")
+
         mode = self._get_lobby_mode(lobby, db)
         penalty = max(0, int(mode.wrong_guess_penalty))
         if penalty < 1:
+            team_round_state.wrong_guess_penalty_applied = True
+            db.commit()
             return
 
         team.score = max(0, team.score - penalty)
+        team_round_state.wrong_guess_penalty_applied = True
         db.commit()
 
     def get_state(self, db: Session, lobby_code: str, message: str | None = None) -> GameState:
@@ -1193,6 +1289,7 @@ class GameEngine:
                     stage_duration=stage_duration,
                     start_at_seconds=int(start_at_seconds),
                 ),
+                extraction_assets=self._resolve_extraction_assets(db, runtime),
                 can_guess=runtime.can_guess,
                 status=runtime.status,
                 playback_token=max(0, int(runtime.playback_token or 0)),
@@ -1214,6 +1311,7 @@ class GameEngine:
                     bonus_points=row.bonus_points,
                     artist_awarded_stage=row.artist_awarded_stage,
                     title_awarded_stage=row.title_awarded_stage,
+                    wrong_guess_penalty_applied=bool(getattr(row, "wrong_guess_penalty_applied", False)),
                     artist_remove_locked=(
                         row.artist_awarded_stage is not None
                         and int(runtime.max_stage_reached or runtime.stage_index) > int(row.artist_awarded_stage)

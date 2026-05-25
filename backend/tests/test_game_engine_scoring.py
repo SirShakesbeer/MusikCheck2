@@ -133,7 +133,7 @@ class GameEngineScoringTests(unittest.TestCase):
             self.assertIsNotNone(team)
             self.assertEqual(team.score, 10)
 
-    def test_wrong_guess_penalty_never_goes_below_zero(self) -> None:
+    def test_wrong_guess_penalty_requires_reveal_and_never_goes_below_zero(self) -> None:
         lobby_code, team_id = self._setup_round()
 
         with self.SessionLocal() as db:
@@ -142,7 +142,33 @@ class GameEngineScoringTests(unittest.TestCase):
             team.score = 3
             db.commit()
 
+            with self.assertRaises(ValueError):
+                self.engine_service.apply_wrong_guess_penalty(db, lobby_code, team_id)
+
+            self.engine_service.finish_round(db, lobby_code)
             self.engine_service.apply_wrong_guess_penalty(db, lobby_code, team_id)
+            team = db.query(Team).filter(Team.id == team_id).first()
+            self.assertIsNotNone(team)
+            self.assertEqual(team.score, 0)
+
+            state = self.engine_service.get_state(db, lobby_code)
+            self.assertIsNotNone(state.current_round)
+            assert state.current_round is not None
+            self.assertTrue(state.round_team_states[0].wrong_guess_penalty_applied)
+
+    def test_cannot_remove_fact_before_penalty_after_reveal(self) -> None:
+        lobby_code, team_id = self._setup_round()
+
+        with self.SessionLocal() as db:
+            self.engine_service.toggle_team_fact(db, lobby_code, team_id, "artist")
+            self.engine_service.finish_round(db, lobby_code)
+
+            with self.assertRaises(ValueError):
+                self.engine_service.toggle_team_fact(db, lobby_code, team_id, "artist")
+
+            self.engine_service.apply_wrong_guess_penalty(db, lobby_code, team_id)
+            self.engine_service.toggle_team_fact(db, lobby_code, team_id, "artist")
+
             team = db.query(Team).filter(Team.id == team_id).first()
             self.assertIsNotNone(team)
             self.assertEqual(team.score, 0)
@@ -224,6 +250,7 @@ class GameEngineScoringTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 self.engine_service.start_round(db, lobby_code)
 
+            self.engine_service.finish_round(db, lobby_code)
             self.engine_service.apply_wrong_guess_penalty(db, lobby_code, team_id)
             self.engine_service.start_round(db, lobby_code)
 

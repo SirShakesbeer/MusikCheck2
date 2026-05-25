@@ -72,6 +72,11 @@ class IndexedTrackState(BaseModel):
     title: str
     artist: str
     release_year: int | None = None
+    extraction_status: str = "pending"
+    extraction_asset_hash: str = ""
+    extraction_frame_path: str = ""
+    extraction_clip_path: str = ""
+    extraction_error: str = ""
     playback_url: str
     duration_seconds: int | None = None
 

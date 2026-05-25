@@ -27,6 +27,12 @@ def apply_schema_patches() -> None:
         ],
         "indexed_tracks": [
             "ADD COLUMN release_year INTEGER",
+            "ADD COLUMN extraction_status VARCHAR(32) DEFAULT 'pending'",
+            "ADD COLUMN extraction_asset_hash VARCHAR(64) DEFAULT ''",
+            "ADD COLUMN extraction_frame_path VARCHAR(2048) DEFAULT ''",
+            "ADD COLUMN extraction_clip_path VARCHAR(2048) DEFAULT ''",
+            "ADD COLUMN extraction_error VARCHAR(1024) DEFAULT ''",
+            "ADD COLUMN extraction_updated_at DATETIME",
         ],
         "active_round_states": [
             "ADD COLUMN max_stage_reached INTEGER DEFAULT 0",
@@ -39,6 +45,7 @@ def apply_schema_patches() -> None:
         "active_round_team_states": [
             "ADD COLUMN artist_awarded_stage INTEGER",
             "ADD COLUMN title_awarded_stage INTEGER",
+            "ADD COLUMN wrong_guess_penalty_applied BOOLEAN DEFAULT FALSE",
         ],
         "lobby_runtime_states": [
             "ADD COLUMN mode_config TEXT DEFAULT ''",

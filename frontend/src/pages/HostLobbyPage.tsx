@@ -4,6 +4,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { RoundPanel } from '../components/RoundPanel';
 import { TeamProgressBoard } from '../components/TeamProgressBoard';
 import { Button, Card, StatusChip } from '../components/ui';
+import { API_BASE_URL } from '../config/defaults';
 import { DEFAULT_SCOREBOARD_MAX_POINTS } from '../config/defaults';
 import { api } from '../services/api';
 import { RoundPlaybackDispatcher } from '../services/playbackDispatcher';
@@ -119,12 +120,6 @@ export function HostLobbyPage() {
         }
         await api.startRound(code);
         const result = await api.playRoundStage(code, 0);
-        if (result.data.current_round?.status === 'playing') {
-          lastPlaybackTokenRef.current = result.data.current_round.playback_token;
-          void playbackDispatcher.playRound(result.data.current_round).catch((err: unknown) => {
-            setError(err instanceof Error ? err.message : String(err));
-          });
-        }
 
         if (result.data.current_round?.round_kind === 'video' && result.data.current_round.video_playback) {
           setVideoPreviewRound(result.data.current_round);
@@ -142,12 +137,6 @@ export function HostLobbyPage() {
       }
 
       const result = await api.playRoundStage(code, targetStageIndex);
-      if (result.data.current_round?.status === 'playing') {
-        lastPlaybackTokenRef.current = result.data.current_round.playback_token;
-        void playbackDispatcher.playRound(result.data.current_round).catch((err: unknown) => {
-          setError(err instanceof Error ? err.message : String(err));
-        });
-      }
 
       if (result.data.current_round?.round_kind === 'video' && result.data.current_round.video_playback) {
         setVideoPreviewRound(result.data.current_round);
@@ -262,8 +251,33 @@ export function HostLobbyPage() {
   const hasWinnerLock = Boolean(state?.has_winner_lock);
   const winnerTeamIds = new Set(state?.winner_team_ids ?? []);
   const previewPlayback = videoPreviewRound?.video_playback ?? null;
-  const previewFrameList = previewPlayback?.frame_urls ?? [];
+  const backendOrigin = useMemo(() => {
+    try {
+      return new URL(API_BASE_URL).origin;
+    } catch {
+      return window.location.origin;
+    }
+  }, []);
+
+  const resolveMediaUrl = (rawUrl: string | null | undefined): string | null => {
+    if (!rawUrl) {
+      return null;
+    }
+    if (/^https?:\/\//i.test(rawUrl) || rawUrl.startsWith('data:') || rawUrl.startsWith('blob:')) {
+      return rawUrl;
+    }
+    if (rawUrl.startsWith('/')) {
+      return `${backendOrigin}${rawUrl}`;
+    }
+    return `${backendOrigin}/${rawUrl}`;
+  };
+
+  const previewFrameList = (previewPlayback?.frame_urls ?? [])
+    .map((url) => resolveMediaUrl(url))
+    .filter((url): url is string => Boolean(url));
   const previewFrame = previewFrameList[videoPreviewFrameIndex] ?? previewFrameList[0] ?? null;
+  const previewClipUrl = resolveMediaUrl(previewPlayback?.clip_url ?? null);
+  const previewClipIsExtractedAsset = Boolean(previewClipUrl && previewClipUrl.includes('/api/media/snippets/'));
 
   useEffect(() => {
     if (!videoPreviewOpen) {
@@ -325,6 +339,7 @@ export function HostLobbyPage() {
         <TeamProgressBoard
           teams={state?.teams ?? []}
           roundStates={teamRoundGuessState}
+          roundFinished={state?.current_round?.status === 'finished'}
           maxPoints={state?.mode?.required_points_to_win ?? DEFAULT_SCOREBOARD_MAX_POINTS}
           winnerTeamIds={winnerTeamIds}
           hasWinnerLock={hasWinnerLock}
@@ -405,13 +420,24 @@ export function HostLobbyPage() {
         >
           <div className="video-round-popup">
             {previewPlayback.mode === 'video_clip' && previewPlayback.clip_url ? (
-              <iframe
-                src={previewPlayback.clip_url}
-                title="Video snippet preview"
-                className="video-round-frame"
-                allow="autoplay; encrypted-media; picture-in-picture"
-                allowFullScreen
-              />
+              previewClipIsExtractedAsset ? (
+                <video
+                  src={previewClipUrl ?? undefined}
+                  title="Video snippet preview"
+                  className="video-round-frame"
+                  autoPlay
+                  controls
+                  playsInline
+                />
+              ) : (
+                <iframe
+                  src={previewClipUrl ?? undefined}
+                  title="Video snippet preview"
+                  className="video-round-frame"
+                  allow="autoplay; encrypted-media; picture-in-picture"
+                  allowFullScreen
+                />
+              )
             ) : (
               previewFrame && <img src={previewFrame} alt="Video round screenshot" className="video-round-frame" />
             )}
