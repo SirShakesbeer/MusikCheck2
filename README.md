@@ -576,11 +576,9 @@ end note
 
 ### gameplay
 
-- Add additional mode plugins (`music_video`, `lyrics`, `instrumental`, `speed round`, `STRÄWKCÜR`) (ffmpeg audio/video/frames extraction)
-- switch music video to use ffmpeg extraction
+- Add additional mode plugins (`lyrics`, `instrumental`, `speed round`, `STRÄWKCÜR`) (ffmpeg audio/video/frames extraction)
 - add a local database ingestion tool that can be connected in the ui
 - adjust point system to be more similar to MusikCheck (penalty points, lock artist/title guess points)
-- default german option and optional english localization
 
 think of a solution: create persistance of user info across sessions (user created gamemodes, highscores, connected local databases)
 
@@ -615,5 +613,4 @@ make the following features consistent with MusikCheck 1
 
 ### low-prio
 
-- language filter
 - add automatic song history file creation

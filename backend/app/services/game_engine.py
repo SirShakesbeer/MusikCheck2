@@ -1251,8 +1251,6 @@ class GameEngine:
                 raise ValueError("Apply penalty first, then remove points already awarded this round.")
             if not penalty_applied:
                 raise ValueError("Apply penalty first before removing points already awarded this round.")
-            if awarded_stage is not None and max_stage_reached > int(awarded_stage):
-                raise ValueError("Cannot remove this fact after a higher snippet stage has been played")
             delta -= selected_points
             if normalized_fact == "artist":
                 team_round_state.artist_points = 0
@@ -1266,8 +1264,6 @@ class GameEngine:
                 team_round_state.bonus_points = 0
         else:
             if selected_points > 0:
-                if awarded_stage is not None and max_stage_reached > int(awarded_stage):
-                    raise ValueError("Cannot remove this fact after a higher snippet stage has been played")
                 delta -= selected_points
                 if normalized_fact == "artist":
                     team_round_state.artist_points = 0
@@ -1413,13 +1409,11 @@ class GameEngine:
                     artist_awarded_stage=row.artist_awarded_stage,
                     title_awarded_stage=row.title_awarded_stage,
                     wrong_guess_penalty_applied=bool(getattr(row, "wrong_guess_penalty_applied", False)),
-                    artist_remove_locked=(
-                        row.artist_awarded_stage is not None
-                        and int(runtime.max_stage_reached or runtime.stage_index) > int(row.artist_awarded_stage)
+                    artist_remove_locked=runtime.status == "finished" and not bool(
+                        getattr(row, "wrong_guess_penalty_applied", False)
                     ),
-                    title_remove_locked=(
-                        row.title_awarded_stage is not None
-                        and int(runtime.max_stage_reached or runtime.stage_index) > int(row.title_awarded_stage)
+                    title_remove_locked=runtime.status == "finished" and not bool(
+                        getattr(row, "wrong_guess_penalty_applied", False)
                     ),
                 )
                 for row in team_state_rows

@@ -112,6 +112,27 @@
     @apply pointer-events-none fixed inset-0 z-0;
   }
 
+  .speech-bubble-3d {
+    @apply relative rounded-[1.5rem] border border-white/20 bg-white/95 px-4 py-3 text-center text-sm font-semibold text-slate-900 shadow-card;
+    min-width: 11rem;
+    max-width: 14rem;
+    transform-origin: bottom center;
+    animation: speechBubblePop 4.8s ease-in-out infinite;
+  }
+
+  .speech-bubble-3d::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    bottom: -9px;
+    width: 18px;
+    height: 18px;
+    transform: translateX(-50%) rotate(45deg);
+    background: inherit;
+    border-right: inherit;
+    border-bottom: inherit;
+  }
+
   .app-route-layer {
     @apply relative z-10;
   }
@@ -546,6 +567,19 @@
     }
   }
 
+  @keyframes speechBubblePop {
+    0%,
+    100% {
+      transform: scale(1) translateY(0);
+    }
+    45% {
+      transform: scale(1.02) translateY(-2px);
+    }
+    55% {
+      transform: scale(0.98) translateY(1px);
+    }
+  }
+
   @media (prefers-reduced-motion: reduce) {
     .team-paper-card {
       animation: none;
@@ -557,7 +591,8 @@
     .paper-button-morphing,
     .round-controls-grid,
     .round-controls-shell,
-    .round-snippet-row {
+    .round-snippet-row,
+    .speech-bubble-3d {
       transform: none;
       animation: none;
     }

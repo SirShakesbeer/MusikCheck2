@@ -335,21 +335,6 @@ export function HostLobbyPage() {
         />
       </div>
 
-      {state?.current_round?.status === 'playing' && (
-        <div className="host-lobby-board mb-3">
-          <Card title={t('hostLobby.buzzer')} tone="panel">
-            {state.current_round.buzzer_player_name ? (
-              <p className="muted-copy">
-                {t('hostLobby.firstPress', { player: state.current_round.buzzer_player_name })}
-                {state.current_round.buzzer_team_name ? t('hostLobby.firstPressFrom', { team: state.current_round.buzzer_team_name }) : ''}
-              </p>
-            ) : (
-              <p className="muted-copy">{t('hostLobby.noBuzzerPressYet')}</p>
-            )}
-          </Card>
-        </div>
-      )}
-
       <section className="host-lobby-board">
         <TeamProgressBoard
           teams={state?.teams ?? []}

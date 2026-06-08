@@ -207,24 +207,27 @@ class GameEngineScoringTests(unittest.TestCase):
             self.assertIsNotNone(team)
             self.assertEqual(team.score, 3)
 
-    def test_cannot_remove_fact_after_higher_stage_played(self) -> None:
+    def test_can_remove_fact_after_higher_stage_played_and_reveal(self) -> None:
         lobby_code, team_id = self._setup_round()
 
         with self.SessionLocal() as db:
             self.engine_service.toggle_team_fact(db, lobby_code, team_id, "artist")
+            self.engine_service.toggle_team_fact(db, lobby_code, team_id, "title")
             self.engine_service.play_stage(db, lobby_code, 1)
-
-            with self.assertRaises(ValueError):
-                self.engine_service.toggle_team_fact(db, lobby_code, team_id, "artist")
-
-            team = db.query(Team).filter(Team.id == team_id).first()
-            self.assertIsNotNone(team)
-            self.assertEqual(team.score, 10)
+            self.engine_service.play_stage(db, lobby_code, 2)
+            self.engine_service.finish_round(db, lobby_code)
+            self.engine_service.apply_wrong_guess_penalty(db, lobby_code, team_id)
 
             self.engine_service.toggle_team_fact(db, lobby_code, team_id, "title")
+
             team = db.query(Team).filter(Team.id == team_id).first()
             self.assertIsNotNone(team)
-            self.assertEqual(team.score, 18)
+            self.assertEqual(team.score, 5)
+
+            self.engine_service.toggle_team_fact(db, lobby_code, team_id, "artist")
+            team = db.query(Team).filter(Team.id == team_id).first()
+            self.assertIsNotNone(team)
+            self.assertEqual(team.score, 0)
 
     def test_winner_lock_blocks_additional_positive_fact_changes(self) -> None:
         lobby_code, team_id = self._setup_round()

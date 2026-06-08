@@ -25,22 +25,12 @@ export function AppBackgroundLayer() {
   }, []);
 
   const enable3d = useMemo(() => {
-    if (backgroundMode !== 'room-3d') {
-      return false;
-    }
-    if (reduceMotion) {
-      return false;
-    }
-    return hasWebGlSupport();
+    return backgroundMode === 'room-3d' && !reduceMotion && hasWebGlSupport();
   }, [backgroundMode, reduceMotion]);
-
-  if (!enable3d) {
-    return null;
-  }
 
   return (
     <div className="app-background-layer" aria-hidden="true">
-      <BackgroundScene3D />
+      {enable3d ? <BackgroundScene3D /> : null}
     </div>
   );
 }

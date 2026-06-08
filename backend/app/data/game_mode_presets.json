@@ -129,5 +129,39 @@
       "release_year_to": null,
       "language": ""
     }
+  },
+  {
+    "key": "standart",
+    "name": "Standart",
+    "stage_durations": [
+      2,
+      3,
+      4
+    ],
+    "stage_points": [
+      4,
+      3,
+      2
+    ],
+    "bonus_points_both": 1,
+    "wrong_guess_penalty": 1,
+    "required_points_to_win": 42,
+    "round_rules": [
+      {
+        "kind": "audio",
+        "every_n_songs": 1,
+        "options": {}
+      },
+      {
+        "kind": "video",
+        "every_n_songs": 3,
+        "options": {}
+      }
+    ],
+    "filters": {
+      "release_year_from": null,
+      "release_year_to": null,
+      "language": null
+    }
   }
 ]
